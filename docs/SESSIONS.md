@@ -170,7 +170,10 @@ Pause and resume sessions:
 
 ### Persistence Across Restarts
 
-Sessions survive application restarts. State is saved to SQLite in `~/.local/share/work-tuimer/work-tuimer.db`.
+Sessions survive application restarts. State is saved in a SQLite database under the application data directory returned by `dirs::data_local_dir()`, for example:
+- Linux: `~/.local/share/work-tuimer/work-tuimer.db`
+- macOS: `~/Library/Application Support/work-tuimer/work-tuimer.db`
+- Windows: `%APPDATA%\work-tuimer\work-tuimer.db`
 
 ### Cross-Date Support
 
