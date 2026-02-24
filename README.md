@@ -16,7 +16,7 @@ Built with Rust and ratatui for efficient time management.
 - **Calendar navigation**: Jump between days, weeks, and months
 - **Arrow keys or Vim motions**: Navigate with arrow keys + Enter, or use h/j/k/l + i for Vim-style workflow
 - **Inline editing with undo/redo**: Fix mistakes in place, up to 50 levels of history
-- **Auto-saves locally per day**: Data stored in a local SQLite database on your machine (`~/.local/share/work-tuimer/work-tuimer.db`)
+- **Auto-saves locally per day**: Data stored in a local SQLite database under `dirs::data_local_dir()` (or `./data/work-tuimer.db` fallback)
 - **Optional ticket integration**: Detect and link to JIRA, Linear, GitHub issues from task names - open ticket URLs directly in your browser from the app
 
 ## Installation
@@ -261,7 +261,7 @@ Primary tables:
 - `active_timer` (single-row table for current timer state)
 
 Storage locations (checked in order):
-1. `~/.local/share/work-tuimer/work-tuimer.db`
+1. `<dirs::data_local_dir()>/work-tuimer/work-tuimer.db` (Linux: `~/.local/share/...`, macOS: `~/Library/Application Support/...`, Windows: `%LOCALAPPDATA%\...`)
 2. `./data/work-tuimer.db` (fallback)
 
 When upgrading from older versions, legacy JSON files are automatically migrated into SQLite and kept on disk as backup.

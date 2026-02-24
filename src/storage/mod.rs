@@ -64,7 +64,7 @@ impl StorageManager {
     /// Load day data with automatic revision tracking
     pub fn load_with_tracking(&mut self, date: Date) -> Result<DayData> {
         let data = self.storage.load(&date)?;
-        let modified_time = self.storage.get_file_modified_time(&date);
+        let modified_time = self.storage.try_get_file_modified_time(&date)?;
         self.file_modified_times.insert(date, modified_time);
         Ok(data)
     }
@@ -72,7 +72,7 @@ impl StorageManager {
     /// Check if day data changed externally and reload if needed.
     /// Returns Some(DayData) if data was modified and reloaded, None if no change.
     pub fn check_and_reload(&mut self, date: Date) -> Result<Option<DayData>> {
-        let current_modified = self.storage.get_file_modified_time(&date);
+        let current_modified = self.storage.try_get_file_modified_time(&date)?;
 
         let is_tracked = self.file_modified_times.contains_key(&date);
         if !is_tracked {
@@ -98,7 +98,7 @@ impl StorageManager {
         day_data.add_record(record);
         self.storage.save(&day_data)?;
 
-        let modified_time = self.storage.get_file_modified_time(&date);
+        let modified_time = self.storage.try_get_file_modified_time(&date)?;
         self.file_modified_times.insert(date, modified_time);
 
         Ok(())
@@ -111,7 +111,7 @@ impl StorageManager {
         day_data.add_record(record);
         self.storage.save(&day_data)?;
 
-        let modified_time = self.storage.get_file_modified_time(&date);
+        let modified_time = self.storage.try_get_file_modified_time(&date)?;
         self.file_modified_times.insert(date, modified_time);
 
         Ok(())
@@ -130,7 +130,7 @@ impl StorageManager {
 
         self.storage.save(&day_data)?;
 
-        let modified_time = self.storage.get_file_modified_time(&date);
+        let modified_time = self.storage.try_get_file_modified_time(&date)?;
         self.file_modified_times.insert(date, modified_time);
 
         Ok(record)
@@ -140,7 +140,7 @@ impl StorageManager {
     pub fn save(&mut self, day_data: &DayData) -> Result<()> {
         self.storage.save(day_data)?;
 
-        let modified_time = self.storage.get_file_modified_time(&day_data.date);
+        let modified_time = self.storage.try_get_file_modified_time(&day_data.date)?;
         self.file_modified_times
             .insert(day_data.date, modified_time);
 
@@ -248,8 +248,22 @@ impl Storage {
 
     /// Get a monotonic day revision encoded as a SystemTime token.
     /// Returns None if the day has never been written.
+    #[allow(dead_code)]
     pub fn get_file_modified_time(&self, date: &Date) -> Option<SystemTime> {
-        self.repository.day_revision_token(date).ok().flatten()
+        match self.try_get_file_modified_time(date) {
+            Ok(token) => token,
+            Err(err) => {
+                eprintln!(
+                    "Failed to read day revision token for {} from storage: {err:#}",
+                    date
+                );
+                None
+            }
+        }
+    }
+
+    pub fn try_get_file_modified_time(&self, date: &Date) -> Result<Option<SystemTime>> {
+        self.repository.day_revision_token(date)
     }
 
     pub fn save_active_timer(&self, timer: &TimerState) -> Result<()> {
@@ -281,6 +295,7 @@ impl SqliteRepository {
 
     fn initialize(&self, data_dir: &Path) -> Result<()> {
         let conn = self.open_connection()?;
+        Self::apply_database_pragmas(&conn)?;
         Self::initialize_schema(&conn)?;
         drop(conn);
 
@@ -292,15 +307,20 @@ impl SqliteRepository {
             "Failed to open SQLite database at {:?}",
             self.db_path
         ))?;
+        conn.execute_batch("PRAGMA foreign_keys = ON;")
+            .context("Failed to enable SQLite foreign key support")?;
+        Ok(conn)
+    }
+
+    fn apply_database_pragmas(conn: &Connection) -> Result<()> {
         conn.execute_batch(
             "
-            PRAGMA foreign_keys = ON;
             PRAGMA journal_mode = WAL;
             PRAGMA synchronous = NORMAL;
             ",
         )
         .context("Failed to configure SQLite pragmas")?;
-        Ok(conn)
+        Ok(())
     }
 
     fn initialize_schema(conn: &Connection) -> Result<()> {

@@ -173,7 +173,7 @@ Pause and resume sessions:
 Sessions survive application restarts. State is saved in a SQLite database under the application data directory returned by `dirs::data_local_dir()`, for example:
 - Linux: `~/.local/share/work-tuimer/work-tuimer.db`
 - macOS: `~/Library/Application Support/work-tuimer/work-tuimer.db`
-- Windows: `%APPDATA%\work-tuimer\work-tuimer.db`
+- Windows: `%LOCALAPPDATA%\work-tuimer\work-tuimer.db`
 
 ### Cross-Date Support
 
@@ -271,8 +271,9 @@ work-tuimer session start "New task"
 ### Active Session Storage
 
 Active sessions are stored in SQLite table `active_timer` (single-row state):
-- **Linux/macOS**: `~/.local/share/work-tuimer/work-tuimer.db`
-- **Windows**: `%APPDATA%\work-tuimer\work-tuimer.db`
+- **Linux**: `~/.local/share/work-tuimer/work-tuimer.db`
+- **macOS**: `~/Library/Application Support/work-tuimer/work-tuimer.db`
+- **Windows**: `%LOCALAPPDATA%\work-tuimer\work-tuimer.db`
 - **Fallback**: `./data/work-tuimer.db`
 
 ### Session State Fields
@@ -290,7 +291,7 @@ When a session stops, it creates or updates a work record in SQLite (`work_recor
 ### Database Location Priority
 
 Daily work records are saved to (checked in order):
-1. `~/.local/share/work-tuimer/work-tuimer.db`
+1. `<dirs::data_local_dir()>/work-tuimer/work-tuimer.db`
 2. `./data/work-tuimer.db` (fallback)
 
 ## Tips
