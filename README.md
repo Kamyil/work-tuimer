@@ -16,7 +16,7 @@ Built with Rust and ratatui for efficient time management.
 - **Calendar navigation**: Jump between days, weeks, and months
 - **Arrow keys or Vim motions**: Navigate with arrow keys + Enter, or use h/j/k/l + i for Vim-style workflow
 - **Inline editing with undo/redo**: Fix mistakes in place, up to 50 levels of history
-- **Auto-saves locally per day**: Data stored as JSON files, for each day, on your machine (`~/.local/share/work-tuimer/`)
+- **Auto-saves locally per day**: Data stored in a local SQLite database on your machine (`~/.local/share/work-tuimer/work-tuimer.db`)
 - **Optional ticket integration**: Detect and link to JIRA, Linear, GitHub issues from task names - open ticket URLs directly in your browser from the app
 
 ## Installation
@@ -108,7 +108,7 @@ cargo build --release
 | `L` | Open worklog URL in browser (only visible if config exists) |
 | `u` | Undo last change |
 | `r` | Redo undone change |
-| `s` | Save to file |
+| `s` | Save to database |
 | `q` | Quit (auto-saves) |
 
 ### Edit Mode
@@ -196,6 +196,21 @@ work-tuimer session stop
 
 **For more info, check [Timer Sessions Guide](docs/SESSIONS.md)**
 
+## Storage Doctor
+
+Use `doctor` to verify migration and local storage health:
+
+```bash
+work-tuimer doctor
+```
+
+It prints:
+- SQLite database path
+- Migration marker status
+- Stored day/record counts
+- Active timer presence
+- Legacy JSON backup file counts
+
 ## Issue Tracker Integration
 
 WorkTimer supports automatic ticket detection from task names and browser integration for **any** issue tracker (JIRA, Linear, GitHub Issues, GitLab, Azure DevOps, etc.). 
@@ -236,29 +251,20 @@ Available Themes: default, kanagawa, catppuccin, gruvbox, monokai, dracula, ever
 
 **For more info, check [Theme Configuration Guide](docs/THEMING.md)**
 
-## Data Format
+## Data Storage
 
-Data is stored per day in JSON format:
+Data is stored in SQLite with dedicated tables for daily metadata, work records, and active timer state.
 
-```json
-{
-  "date": "2025-10-31",
-  "work_records": [
-    {
-      "id": 1,
-      "name": "Task name",
-      "start": "09:00",
-      "end": "12:00",
-      "total_minutes": 180,
-      "description": "Optional description"
-    }
-  ]
-}
-```
+Primary tables:
+- `day_meta` (`date`, `last_id`, `revision`)
+- `work_records` (`date`, `id`, `name`, `start_minutes`, `end_minutes`, `total_minutes`, `description`)
+- `active_timer` (single-row table for current timer state)
 
 Storage locations (checked in order):
-1. `~/.local/share/work-tuimer/YYYY-MM-DD.json`
-2. `./data/YYYY-MM-DD.json` (fallback)
+1. `~/.local/share/work-tuimer/work-tuimer.db`
+2. `./data/work-tuimer.db` (fallback)
+
+When upgrading from older versions, legacy JSON files are automatically migrated into SQLite and kept on disk as backup.
 
 ## Project Structure
 
@@ -268,8 +274,8 @@ src/
 │   ├── time_point.rs   - Time representation (HH:MM format)
 │   ├── work_record.rs  - Individual work entry
 │   └── day_data.rs     - Daily collection of records
-├── storage/        # File I/O
-│   └── storage.rs      - JSON persistence
+├── storage/        # SQLite persistence + migration
+│   └── mod.rs          - Storage manager and repository
 ├── ui/             # Terminal interface
 │   ├── app_state.rs    - State management & event handlers
 │   └── render.rs       - UI rendering with ratatui
