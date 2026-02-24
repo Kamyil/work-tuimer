@@ -75,6 +75,28 @@ fn handle_doctor(storage: Storage) -> Result<()> {
     println!("WorkTimer Doctor");
     println!("  Database: {}", diagnostics.database_path.display());
     println!(
+        "  Schema version (meta): {}",
+        diagnostics.schema_version.as_deref().unwrap_or("<not-set>")
+    );
+    println!(
+        "  Schema min compatible: {}",
+        diagnostics
+            .schema_min_compatible_version
+            .as_deref()
+            .unwrap_or("<not-set>")
+    );
+    println!(
+        "  Schema contract: {}",
+        diagnostics
+            .schema_contract
+            .as_deref()
+            .unwrap_or("<not-set>")
+    );
+    println!(
+        "  Schema version (pragma): {}",
+        diagnostics.pragma_user_version
+    );
+    println!(
         "  Migration marker: {}",
         diagnostics
             .migration_marker

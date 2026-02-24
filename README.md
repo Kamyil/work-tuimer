@@ -266,6 +266,8 @@ Storage locations (checked in order):
 
 When upgrading from older versions, legacy JSON files are automatically migrated into SQLite and kept on disk as backup.
 
+For integration and plugin queries, see [Database Schema Contract](docs/DB_SCHEMA.md).
+
 ## Project Structure
 
 ```
