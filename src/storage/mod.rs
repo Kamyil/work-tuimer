@@ -1,7 +1,7 @@
 use crate::models::{DayData, TimePoint, WorkRecord};
 use crate::timer::{TimerState, TimerStatus};
-use anyhow::{Context, Result, anyhow};
-use rusqlite::{Connection, OptionalExtension, Transaction, params};
+use anyhow::{anyhow, Context, Result};
+use rusqlite::{params, Connection, OptionalExtension, Transaction};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -14,6 +14,12 @@ const DATABASE_FILE_NAME: &str = "work-tuimer.db";
 const LEGACY_RUNNING_TIMER_FILE_NAME: &str = "running_timer.json";
 const LEGACY_ACTIVE_TIMER_FILE_NAME: &str = "active_timer.json";
 const JSON_MIGRATION_META_KEY: &str = "migration.json_to_sqlite.v1";
+const SCHEMA_VERSION_META_KEY: &str = "schema.version";
+const SCHEMA_MIN_COMPAT_VERSION_META_KEY: &str = "schema.min_compatible_version";
+const SCHEMA_CONTRACT_META_KEY: &str = "schema.contract";
+const SCHEMA_VERSION: u64 = 1;
+const SCHEMA_MIN_COMPAT_VERSION: u64 = 1;
+const SCHEMA_CONTRACT: &str = "plugin-read-v1";
 
 #[derive(Clone)]
 pub struct Storage {
@@ -34,6 +40,10 @@ pub struct StorageManager {
 
 pub struct StorageDiagnostics {
     pub database_path: PathBuf,
+    pub schema_version: Option<String>,
+    pub schema_min_compatible_version: Option<String>,
+    pub schema_contract: Option<String>,
+    pub pragma_user_version: u64,
     pub migration_marker: Option<String>,
     pub days_count: u64,
     pub work_records_count: u64,
@@ -302,6 +312,7 @@ impl SqliteRepository {
         let conn = self.open_connection()?;
         Self::apply_database_pragmas(&conn)?;
         Self::initialize_schema(&conn)?;
+        Self::initialize_schema_metadata(&conn)?;
         drop(conn);
 
         self
@@ -359,6 +370,12 @@ impl SqliteRepository {
             CREATE INDEX IF NOT EXISTS idx_work_records_date_start
                 ON work_records(date, start_minutes);
 
+            CREATE INDEX IF NOT EXISTS idx_work_records_name_date
+                ON work_records(name, date);
+
+            CREATE INDEX IF NOT EXISTS idx_work_records_date_total
+                ON work_records(date, total_minutes);
+
             CREATE TABLE IF NOT EXISTS active_timer (
                 singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
                 id INTEGER,
@@ -375,10 +392,88 @@ impl SqliteRepository {
                 source_record_id INTEGER,
                 source_record_date TEXT
             );
+
+            CREATE VIEW IF NOT EXISTS v_work_records AS
+            SELECT
+                wr.date AS date,
+                wr.id AS record_id,
+                wr.date || ':' || wr.id AS record_uid,
+                wr.name AS name,
+                wr.start_minutes AS start_minutes,
+                printf('%02d:%02d', wr.start_minutes / 60, wr.start_minutes % 60) AS start_time,
+                wr.end_minutes AS end_minutes,
+                printf('%02d:%02d', wr.end_minutes / 60, wr.end_minutes % 60) AS end_time,
+                wr.total_minutes AS total_minutes,
+                wr.description AS description,
+                dm.last_id AS day_last_id,
+                dm.revision AS day_revision
+            FROM work_records wr
+            JOIN day_meta dm ON dm.date = wr.date;
+
+            CREATE VIEW IF NOT EXISTS v_daily_totals AS
+            SELECT
+                wr.date AS date,
+                COUNT(*) AS records_count,
+                COALESCE(SUM(wr.total_minutes), 0) AS total_minutes
+            FROM work_records wr
+            GROUP BY wr.date;
+
+            CREATE VIEW IF NOT EXISTS v_active_timer AS
+            SELECT
+                singleton_id,
+                id,
+                task_name,
+                description,
+                start_time,
+                end_time,
+                date,
+                status,
+                paused_duration_secs,
+                paused_at,
+                created_at,
+                updated_at,
+                source_record_id,
+                source_record_date
+            FROM active_timer
+            WHERE singleton_id = 1;
             ",
         )
         .context("Failed to initialize SQLite schema")?;
 
+        Ok(())
+    }
+
+    fn initialize_schema_metadata(conn: &Connection) -> Result<()> {
+        let tx = conn
+            .unchecked_transaction()
+            .context("Failed to begin schema metadata transaction")?;
+
+        let current_user_version = tx
+            .query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+            .context("Failed to read SQLite PRAGMA user_version")?;
+
+        let effective_user_version = if current_user_version == 0 {
+            tx.execute_batch(&format!("PRAGMA user_version = {SCHEMA_VERSION};"))
+                .context("Failed to initialize SQLite PRAGMA user_version")?;
+            SCHEMA_VERSION
+        } else {
+            i64_to_u64(current_user_version, "PRAGMA user_version")?
+        };
+
+        Self::set_meta_value_tx(
+            &tx,
+            SCHEMA_VERSION_META_KEY,
+            &effective_user_version.to_string(),
+        )?;
+        Self::set_meta_value_tx(
+            &tx,
+            SCHEMA_MIN_COMPAT_VERSION_META_KEY,
+            &SCHEMA_MIN_COMPAT_VERSION.to_string(),
+        )?;
+        Self::set_meta_value_tx(&tx, SCHEMA_CONTRACT_META_KEY, SCHEMA_CONTRACT)?;
+
+        tx.commit()
+            .context("Failed to commit schema metadata transaction")?;
         Ok(())
     }
 
@@ -616,6 +711,39 @@ impl SqliteRepository {
     fn diagnostics(&self) -> Result<StorageDiagnostics> {
         let conn = self.open_connection()?;
 
+        let schema_version = conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = ?1",
+                params![SCHEMA_VERSION_META_KEY],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .context("Failed to query schema version")?;
+
+        let schema_min_compatible_version = conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = ?1",
+                params![SCHEMA_MIN_COMPAT_VERSION_META_KEY],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .context("Failed to query minimum compatible schema version")?;
+
+        let schema_contract = conn
+            .query_row(
+                "SELECT value FROM meta WHERE key = ?1",
+                params![SCHEMA_CONTRACT_META_KEY],
+                |row| row.get::<_, String>(0),
+            )
+            .optional()
+            .context("Failed to query schema contract")?;
+
+        let pragma_user_version = i64_to_u64(
+            conn.query_row("PRAGMA user_version", [], |row| row.get::<_, i64>(0))
+                .context("Failed to query PRAGMA user_version")?,
+            "PRAGMA user_version",
+        )?;
+
         let migration_marker = conn
             .query_row(
                 "SELECT value FROM meta WHERE key = ?1",
@@ -661,6 +789,10 @@ impl SqliteRepository {
 
         Ok(StorageDiagnostics {
             database_path,
+            schema_version,
+            schema_min_compatible_version,
+            schema_contract,
+            pragma_user_version,
             migration_marker,
             days_count,
             work_records_count,
@@ -1361,11 +1493,66 @@ mod tests {
 
         let diagnostics = storage.diagnostics().unwrap();
 
+        assert_eq!(diagnostics.schema_version.as_deref(), Some("1"));
+        assert_eq!(
+            diagnostics.schema_min_compatible_version.as_deref(),
+            Some("1")
+        );
+        assert_eq!(
+            diagnostics.schema_contract.as_deref(),
+            Some("plugin-read-v1")
+        );
+        assert_eq!(diagnostics.pragma_user_version, 1);
         assert_eq!(diagnostics.migration_marker.as_deref(), Some("done"));
         assert_eq!(diagnostics.days_count, 1);
         assert_eq!(diagnostics.work_records_count, 2);
         assert!(!diagnostics.active_timer_present);
         assert_eq!(diagnostics.legacy_day_json_files, 1);
         assert_eq!(diagnostics.legacy_timer_json_files, 0);
+    }
+
+    #[test]
+    fn test_plugin_views_are_queryable() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Storage::new_with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let date = create_test_date();
+
+        let mut day_data = DayData::new(date);
+        day_data.add_record(create_test_record(1, "Task One"));
+        day_data.add_record(create_test_record(2, "Task Two"));
+        storage.save(&day_data).unwrap();
+
+        let conn = Connection::open(storage.get_db_path()).unwrap();
+
+        let (record_uid, start_time, end_time): (String, String, String) = conn
+            .query_row(
+                "
+                SELECT record_uid, start_time, end_time
+                FROM v_work_records
+                WHERE date = ?1 AND record_id = 1
+                ",
+                params!["2025-11-06"],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .unwrap();
+
+        assert_eq!(record_uid, "2025-11-06:1");
+        assert_eq!(start_time, "09:00");
+        assert_eq!(end_time, "17:00");
+
+        let (records_count, total_minutes): (i64, i64) = conn
+            .query_row(
+                "
+                SELECT records_count, total_minutes
+                FROM v_daily_totals
+                WHERE date = ?1
+                ",
+                params!["2025-11-06"],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .unwrap();
+
+        assert_eq!(records_count, 2);
+        assert_eq!(total_minutes, 960);
     }
 }
