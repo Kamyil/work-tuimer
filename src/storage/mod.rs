@@ -1,7 +1,7 @@
 use crate::models::{DayData, TimePoint, WorkRecord};
 use crate::timer::{TimerState, TimerStatus};
-use anyhow::{anyhow, Context, Result};
-use rusqlite::{params, Connection, OptionalExtension, Transaction};
+use anyhow::{Context, Result, anyhow};
+use rusqlite::{Connection, OptionalExtension, Transaction, params};
 use std::collections::HashMap;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -82,6 +82,8 @@ impl StorageManager {
         }
 
         let last_known = self.file_modified_times.get(&date).copied().flatten();
+        // We only need inequality detection here. We intentionally do not rely
+        // on ordering semantics across processes.
         if current_modified != last_known {
             let data = self.storage.load(&date)?;
             self.file_modified_times.insert(date, current_modified);
@@ -246,8 +248,11 @@ impl Storage {
         self.repository.save_day(day_data)
     }
 
-    /// Get a monotonic day revision encoded as a SystemTime token.
+    /// Get a synthetic monotonic token derived from day revision state.
     /// Returns None if the day has never been written.
+    ///
+    /// This is not a wall-clock timestamp; it is used only for equality/
+    /// inequality change detection.
     #[allow(dead_code)]
     pub fn get_file_modified_time(&self, date: &Date) -> Option<SystemTime> {
         match self.try_get_file_modified_time(date) {
@@ -299,7 +304,9 @@ impl SqliteRepository {
         Self::initialize_schema(&conn)?;
         drop(conn);
 
-        self.migrate_from_legacy_json_if_needed(data_dir)
+        self
+            .migrate_from_legacy_json_if_needed(data_dir)
+            .context("Failed to migrate legacy JSON into SQLite. Fix or remove malformed legacy JSON files and restart")
     }
 
     fn open_connection(&self) -> Result<Connection> {
@@ -333,8 +340,8 @@ impl SqliteRepository {
 
             CREATE TABLE IF NOT EXISTS day_meta (
                 date TEXT PRIMARY KEY,
-                last_id INTEGER NOT NULL DEFAULT 0,
-                revision INTEGER NOT NULL DEFAULT 0
+                last_id INTEGER NOT NULL DEFAULT 0 CHECK (last_id >= 0),
+                revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0)
             );
 
             CREATE TABLE IF NOT EXISTS work_records (
@@ -360,8 +367,8 @@ impl SqliteRepository {
                 start_time TEXT NOT NULL,
                 end_time TEXT,
                 date TEXT NOT NULL,
-                status TEXT NOT NULL,
-                paused_duration_secs INTEGER NOT NULL,
+                status TEXT NOT NULL CHECK (status IN ('running', 'paused', 'stopped')),
+                paused_duration_secs INTEGER NOT NULL CHECK (paused_duration_secs >= 0),
                 paused_at TEXT,
                 created_at TEXT NOT NULL,
                 updated_at TEXT NOT NULL,
@@ -477,6 +484,8 @@ impl SqliteRepository {
                 if revision < 0 {
                     anyhow::bail!("Invalid negative revision in database: {}", revision);
                 }
+                // Convert revision counter into a synthetic token. We only use
+                // this value as a monotonic change marker, not as a real time.
                 let token = SystemTime::UNIX_EPOCH
                     .checked_add(StdDuration::from_secs(revision as u64))
                     .context("Failed to convert revision to SystemTime")?;
@@ -782,6 +791,8 @@ impl SqliteRepository {
         }
 
         if increment_revision {
+            // Revision is an i64 counter. It would require an impractical number
+            // of writes to overflow, and serves only as a monotonic change token.
             tx.execute(
                 "
                 UPDATE day_meta
@@ -793,6 +804,8 @@ impl SqliteRepository {
             )
             .context("Failed to update day_meta with incremented revision")?;
         } else {
+            // Migration initializes revision to at least 1 so downstream change
+            // detection has a stable non-zero token from first persisted state.
             tx.execute(
                 "
                 UPDATE day_meta
@@ -971,6 +984,10 @@ impl SqliteRepository {
 
             let date_key = format_date(parsed_file_date);
             if Self::day_exists_tx(tx, &date_key)? {
+                eprintln!(
+                    "Skipping legacy JSON import for {} from {:?}: data already exists in SQLite",
+                    date_key, path
+                );
                 continue;
             }
 
@@ -1000,10 +1017,17 @@ impl SqliteRepository {
             return Ok(());
         }
 
-        let timer_paths = [
-            data_dir.join(LEGACY_RUNNING_TIMER_FILE_NAME),
-            data_dir.join(LEGACY_ACTIVE_TIMER_FILE_NAME),
-        ];
+        let running_timer_path = data_dir.join(LEGACY_RUNNING_TIMER_FILE_NAME);
+        let active_timer_path = data_dir.join(LEGACY_ACTIVE_TIMER_FILE_NAME);
+
+        if running_timer_path.exists() && active_timer_path.exists() {
+            eprintln!(
+                "Found both legacy timer files ({:?}, {:?}); preferring {:?}",
+                running_timer_path, active_timer_path, running_timer_path
+            );
+        }
+
+        let timer_paths = [running_timer_path, active_timer_path];
 
         for path in timer_paths {
             if !path.exists() {
@@ -1273,6 +1297,15 @@ mod tests {
 
         let result = Storage::new_with_dir(data_dir.to_path_buf());
         assert!(result.is_err());
+        let err = result.err().expect("expected malformed migration to fail");
+        let err_msg = format!("{err:#}");
+        let malformed_path_str = malformed_day_path.display().to_string();
+        assert!(
+            err_msg.contains(&malformed_path_str),
+            "error message '{}' did not include malformed file path '{}'",
+            err_msg,
+            malformed_path_str
+        );
 
         let db_path = data_dir.join(DATABASE_FILE_NAME);
         let conn = Connection::open(db_path).unwrap();
@@ -1280,6 +1313,33 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM day_meta", [], |row| row.get(0))
             .unwrap();
         assert_eq!(day_rows, 0);
+    }
+
+    #[test]
+    fn test_json_migration_prefers_running_timer_when_both_timer_files_exist() {
+        let temp_dir = TempDir::new().unwrap();
+        let data_dir = temp_dir.path();
+
+        let mut running_timer = create_test_timer();
+        running_timer.task_name = "running timer file".to_string();
+        fs::write(
+            data_dir.join(LEGACY_RUNNING_TIMER_FILE_NAME),
+            serde_json::to_string_pretty(&running_timer).unwrap(),
+        )
+        .unwrap();
+
+        let mut active_timer = create_test_timer();
+        active_timer.task_name = "active timer file".to_string();
+        fs::write(
+            data_dir.join(LEGACY_ACTIVE_TIMER_FILE_NAME),
+            serde_json::to_string_pretty(&active_timer).unwrap(),
+        )
+        .unwrap();
+
+        let storage = Storage::new_with_dir(data_dir.to_path_buf()).unwrap();
+        let loaded = storage.load_active_timer().unwrap().unwrap();
+
+        assert_eq!(loaded.task_name, "running timer file");
     }
 
     #[test]

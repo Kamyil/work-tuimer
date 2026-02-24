@@ -99,7 +99,9 @@ fn handle_doctor(storage: Storage) -> Result<()> {
     if diagnostics.migration_marker.is_some() {
         println!("  Status: OK (SQLite migration completed)");
     } else {
-        println!("  Status: WARN (migration marker missing)");
+        println!(
+            "  Status: WARN (unexpected missing migration marker; possible failed migration or DB issue)"
+        );
     }
 
     Ok(())
