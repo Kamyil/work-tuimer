@@ -170,7 +170,10 @@ Pause and resume sessions:
 
 ### Persistence Across Restarts
 
-Sessions survive application restarts. State is saved to `~/.local/share/work-tuimer/active_timer.json`.
+Sessions survive application restarts. State is saved in a SQLite database under the application data directory returned by `dirs::data_local_dir()`, for example:
+- Linux: `~/.local/share/work-tuimer/work-tuimer.db`
+- macOS: `~/Library/Application Support/work-tuimer/work-tuimer.db`
+- Windows: `%LOCALAPPDATA%\work-tuimer\work-tuimer.db`
 
 ### Cross-Date Support
 
@@ -267,50 +270,29 @@ work-tuimer session start "New task"
 
 ### Active Session Storage
 
-Active sessions are stored in:
-- **Linux/macOS**: `~/.local/share/work-tuimer/active_timer.json`
-- **Windows**: `%APPDATA%\work-tuimer\active_timer.json`
-- **Fallback**: `./data/active_timer.json`
+Active sessions are stored in SQLite table `active_timer` (single-row state):
+- **Linux**: `~/.local/share/work-tuimer/work-tuimer.db`
+- **macOS**: `~/Library/Application Support/work-tuimer/work-tuimer.db`
+- **Windows**: `%LOCALAPPDATA%\work-tuimer\work-tuimer.db`
+- **Fallback**: `./data/work-tuimer.db`
 
-### Session State Format
+### Session State Fields
 
-```json
-{
-  "task_name": "My Task",
-  "description": "Optional description",
-  "start_time": "2025-11-12T14:30:45.123456789Z",
-  "status": "Running",
-  "paused_duration_secs": 0,
-  "source_record_id": 1,
-  "date": "2025-11-12"
-}
-```
+The `active_timer` row stores:
+- `task_name`, `description`
+- `start_time`, `end_time`, `date`
+- `status`, `paused_duration_secs`, `paused_at`
+- `source_record_id`, `source_record_date`
 
 ### Work Record Integration
 
-When a session stops, it creates or updates a work record in the daily file:
+When a session stops, it creates or updates a work record in SQLite (`work_records` table) for the target day.
 
-```json
-{
-  "date": "2025-11-12",
-  "work_records": [
-    {
-      "id": 1,
-      "name": "My Task",
-      "start": "14:30",
-      "end": "15:54",
-      "total_minutes": 84,
-      "description": "Optional description"
-    }
-  ]
-}
-```
-
-### File Location Priority
+### Database Location Priority
 
 Daily work records are saved to (checked in order):
-1. `~/.local/share/work-tuimer/YYYY-MM-DD.json`
-2. `./data/YYYY-MM-DD.json` (fallback)
+1. `<dirs::data_local_dir()>/work-tuimer/work-tuimer.db`
+2. `./data/work-tuimer.db` (fallback)
 
 ## Tips
 
@@ -331,8 +313,8 @@ Daily work records are saved to (checked in order):
 
 ### Lost session after restart
 
-- Sessions are saved to `active_timer.json` - check if the file exists
-- If the file was deleted, the session cannot be recovered
+- Sessions are saved to `work-tuimer.db` (table `active_timer`) - check if the DB file exists
+- If the DB file was deleted, the session cannot be recovered
 
 ### Wrong end time on stopped session
 

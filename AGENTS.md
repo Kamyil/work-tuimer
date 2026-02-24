@@ -50,4 +50,4 @@ When working on any feature or bug fix:
 - **State Management**: Mutable methods on structs (e.g., `&mut self`); validate before mutating
 - **UI Pattern**: Separate state (`app_state.rs`) from rendering (`render.rs`); use ratatui widgets
 - **Module Structure**: Each module exports types via `pub use` in `mod.rs`
-- **Data Storage**: JSON files per day (`YYYY-MM-DD.json`), auto-create dirs with `fs::create_dir_all`
+- **Data Storage**: SQLite database (`work-tuimer.db`) in app data dir, keep legacy JSON files on disk after migration

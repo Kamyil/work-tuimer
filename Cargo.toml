@@ -40,6 +40,7 @@ fuzzy-matcher = "0.3"
 toml = "0.8"
 regex = "1.10"
 clap = { version = "4.4", features = ["derive"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
 
 [dev-dependencies]
 tempfile = "3.8"

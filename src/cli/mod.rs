@@ -22,6 +22,9 @@ pub enum Commands {
         #[command(subcommand)]
         command: SessionCommands,
     },
+
+    /// Show storage and migration diagnostics
+    Doctor,
 }
 
 /// Session management commands
@@ -62,7 +65,46 @@ pub fn handle_command(cmd: Commands, storage: Storage) -> Result<()> {
             SessionCommands::Resume => handle_resume(storage),
             SessionCommands::Status => handle_status(storage),
         },
+        Commands::Doctor => handle_doctor(storage),
     }
+}
+
+fn handle_doctor(storage: Storage) -> Result<()> {
+    let diagnostics = storage.diagnostics()?;
+
+    println!("WorkTimer Doctor");
+    println!("  Database: {}", diagnostics.database_path.display());
+    println!(
+        "  Migration marker: {}",
+        diagnostics
+            .migration_marker
+            .as_deref()
+            .unwrap_or("<not-set>")
+    );
+    println!("  Days stored: {}", diagnostics.days_count);
+    println!("  Work records: {}", diagnostics.work_records_count);
+    println!(
+        "  Active timer: {}",
+        if diagnostics.active_timer_present {
+            "present"
+        } else {
+            "none"
+        }
+    );
+    println!(
+        "  Legacy JSON backups: {} day files, {} timer files",
+        diagnostics.legacy_day_json_files, diagnostics.legacy_timer_json_files
+    );
+
+    if diagnostics.migration_marker.is_some() {
+        println!("  Status: OK (SQLite migration completed)");
+    } else {
+        println!(
+            "  Status: WARN (unexpected missing migration marker; possible failed migration or DB issue)"
+        );
+    }
+
+    Ok(())
 }
 
 /// Start a new session
@@ -251,5 +293,11 @@ mod tests {
         assert!(version.is_some(), "CLI should have version configured");
         // Version comes from Cargo.toml
         assert_eq!(version.unwrap(), env!("CARGO_PKG_VERSION"));
+    }
+
+    #[test]
+    fn test_cli_doctor_command_parse() {
+        let cli = Cli::try_parse_from(["work-tuimer", "doctor"]).unwrap();
+        assert!(matches!(cli.command, Commands::Doctor));
     }
 }
