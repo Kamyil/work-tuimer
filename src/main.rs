@@ -9,7 +9,7 @@ mod ui;
 use anyhow::{Context, Result};
 use clap::Parser;
 use crossterm::{
-    event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind, KeyModifiers},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
@@ -117,6 +117,7 @@ fn run_app<B: ratatui::backend::Backend>(
 fn handle_key_event(app: &mut AppState, key: KeyEvent, storage: &mut storage::StorageManager) {
     // Clear any previous error messages on new key press
     app.clear_error();
+    let is_enter_key = is_enter_key(key);
 
     match app.mode {
         ui::AppMode::Browse => match key.code {
@@ -160,11 +161,12 @@ fn handle_key_event(app: &mut AppState, key: KeyEvent, storage: &mut storage::St
                     }
                 }
             }
+            _ if is_enter_key => app.enter_edit_mode(),
             KeyCode::Up | KeyCode::Char('k') => app.move_selection_up(),
             KeyCode::Down | KeyCode::Char('j') => app.move_selection_down(),
             KeyCode::Left | KeyCode::Char('h') => app.move_field_left(),
             KeyCode::Right | KeyCode::Char('l') => app.move_field_right(),
-            KeyCode::Enter | KeyCode::Char('i') => app.enter_edit_mode(),
+            KeyCode::Char('i') => app.enter_edit_mode(),
             KeyCode::Char('c') => app.change_task_name(),
             KeyCode::Char('n') => {
                 app.add_new_record();
@@ -208,7 +210,7 @@ fn handle_key_event(app: &mut AppState, key: KeyEvent, storage: &mut storage::St
         ui::AppMode::Edit => match key.code {
             KeyCode::Esc => app.exit_edit_mode(),
             KeyCode::Tab => app.next_field(),
-            KeyCode::Enter => {
+            _ if is_enter_key => {
                 let _ = app.save_edit();
                 let _ = storage.save(&app.day_data);
                 app.last_file_modified = storage.get_last_modified(&app.current_date);
@@ -235,7 +237,7 @@ fn handle_key_event(app: &mut AppState, key: KeyEvent, storage: &mut storage::St
                 let filtered_count = app.get_filtered_commands().len();
                 app.move_command_palette_down(filtered_count);
             }
-            KeyCode::Enter => {
+            _ if is_enter_key => {
                 if let Some(action) = app.execute_selected_command() {
                     execute_command_action(app, action, storage);
                 }
@@ -246,7 +248,7 @@ fn handle_key_event(app: &mut AppState, key: KeyEvent, storage: &mut storage::St
         },
         ui::AppMode::Calendar => match key.code {
             KeyCode::Esc => app.close_calendar(),
-            KeyCode::Enter => app.calendar_select_date(),
+            _ if is_enter_key => app.calendar_select_date(),
             KeyCode::Left | KeyCode::Char('h') => app.calendar_navigate_left(),
             KeyCode::Right | KeyCode::Char('l') => app.calendar_navigate_right(),
             KeyCode::Up | KeyCode::Char('k') => app.calendar_navigate_up(),
@@ -266,7 +268,7 @@ fn handle_key_event(app: &mut AppState, key: KeyEvent, storage: &mut storage::St
                 let filtered_tasks = app.get_filtered_task_names();
                 app.move_task_picker_down(filtered_tasks.len());
             }
-            KeyCode::Enter => {
+            _ if is_enter_key => {
                 app.select_task_from_picker();
                 let _ = storage.save(&app.day_data);
                 app.last_file_modified = storage.get_last_modified(&app.current_date);
@@ -276,6 +278,12 @@ fn handle_key_event(app: &mut AppState, key: KeyEvent, storage: &mut storage::St
             _ => {}
         },
     }
+}
+
+fn is_enter_key(key: KeyEvent) -> bool {
+    matches!(key.code, KeyCode::Enter | KeyCode::Char('\n') | KeyCode::Char('\r'))
+        || (key.modifiers == KeyModifiers::CONTROL
+            && matches!(key.code, KeyCode::Char('j') | KeyCode::Char('m')))
 }
 
 fn execute_command_action(
@@ -353,5 +361,81 @@ fn execute_command_action(
             }
         }
         CommandAction::Quit => app.should_quit = true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{handle_key_event, is_enter_key};
+    use crate::{
+        models::{DayData, TimePoint, WorkRecord},
+        storage::StorageManager,
+        ui::{AppMode, AppState},
+    };
+    use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+    use tempfile::TempDir;
+    use time::{Date, Month};
+
+    fn create_test_app() -> AppState {
+        let date = Date::from_calendar_date(2025, Month::November, 6).unwrap();
+        let mut day_data = DayData::new(date);
+        day_data.add_record(WorkRecord::new(
+            1,
+            "Task".to_string(),
+            TimePoint::new(9, 0).unwrap(),
+            TimePoint::new(10, 0).unwrap(),
+        ));
+        AppState::new(day_data)
+    }
+
+    fn create_test_storage() -> StorageManager {
+        let temp_dir = TempDir::new().unwrap();
+        StorageManager::new_with_dir(temp_dir.keep()).unwrap()
+    }
+
+    fn key_event(code: KeyCode, modifiers: KeyModifiers) -> KeyEvent {
+        KeyEvent::new_with_kind(code, modifiers, KeyEventKind::Press)
+    }
+
+    #[test]
+    fn test_recognizes_keypad_enter_variants() {
+        assert!(is_enter_key(key_event(KeyCode::Enter, KeyModifiers::NONE)));
+        assert!(is_enter_key(key_event(KeyCode::Char('\n'), KeyModifiers::NONE)));
+        assert!(is_enter_key(key_event(KeyCode::Char('\r'), KeyModifiers::NONE)));
+        assert!(is_enter_key(key_event(KeyCode::Char('j'), KeyModifiers::CONTROL)));
+        assert!(is_enter_key(key_event(KeyCode::Char('m'), KeyModifiers::CONTROL)));
+        assert!(!is_enter_key(key_event(KeyCode::Char('j'), KeyModifiers::NONE)));
+    }
+
+    #[test]
+    fn test_ctrl_j_enters_edit_mode_in_browse() {
+        let mut app = create_test_app();
+        let mut storage = create_test_storage();
+
+        handle_key_event(
+            &mut app,
+            key_event(KeyCode::Char('j'), KeyModifiers::CONTROL),
+            &mut storage,
+        );
+
+        assert!(matches!(app.mode, AppMode::Edit));
+    }
+
+    #[test]
+    fn test_ctrl_j_saves_in_edit_mode() {
+        let mut app = create_test_app();
+        let mut storage = create_test_storage();
+
+        app.enter_edit_mode();
+        app.input_buffer = "Updated Task".to_string();
+
+        handle_key_event(
+            &mut app,
+            key_event(KeyCode::Char('j'), KeyModifiers::CONTROL),
+            &mut storage,
+        );
+
+        assert!(matches!(app.mode, AppMode::Browse));
+        assert_eq!(app.get_selected_record().unwrap().name, "Updated Task");
     }
 }
