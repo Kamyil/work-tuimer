@@ -64,6 +64,8 @@ fn test_sqlite_active_timer_persistence_is_queryable() -> Result<()> {
         id: None,
         task_name: "DB Timer Test".to_string(),
         description: Some("Timer persisted in SQLite".to_string()),
+        project: Some("Platform".to_string()),
+        customer: Some("ACME".to_string()),
         start_time: now,
         end_time: None,
         date: now.date(),
@@ -81,15 +83,31 @@ fn test_sqlite_active_timer_persistence_is_queryable() -> Result<()> {
     let db_path = temp_dir.path().join("work-tuimer.db");
     let conn = Connection::open(db_path)?;
 
-    let (task_name, status, description): (String, String, Option<String>) = conn.query_row(
-        "SELECT task_name, status, description FROM active_timer WHERE singleton_id = 1",
+    let (task_name, status, description, project, customer): (
+        String,
+        String,
+        Option<String>,
+        Option<String>,
+        Option<String>,
+    ) = conn.query_row(
+        "SELECT task_name, status, description, project, customer FROM active_timer WHERE singleton_id = 1",
         [],
-        |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+        |row| {
+            Ok((
+                row.get(0)?,
+                row.get(1)?,
+                row.get(2)?,
+                row.get(3)?,
+                row.get(4)?,
+            ))
+        },
     )?;
 
     assert_eq!(task_name, "DB Timer Test");
     assert_eq!(status, "running");
     assert_eq!(description, Some("Timer persisted in SQLite".to_string()));
+    assert_eq!(project, Some("Platform".to_string()));
+    assert_eq!(customer, Some("ACME".to_string()));
 
     storage.clear_active_timer()?;
 

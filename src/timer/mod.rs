@@ -35,6 +35,14 @@ pub struct TimerState {
     /// Optional description for the task
     pub description: Option<String>,
 
+    /// Optional project name for grouping/reporting
+    #[serde(default)]
+    pub project: Option<String>,
+
+    /// Optional customer name for client-related work
+    #[serde(default)]
+    pub customer: Option<String>,
+
     /// When the timer was started (UTC)
     pub start_time: OffsetDateTime,
 
@@ -93,6 +101,8 @@ impl TimerManager {
         &self,
         task_name: String,
         description: Option<String>,
+        project: Option<String>,
+        customer: Option<String>,
         source_record_id: Option<u32>,
         source_record_date: Option<Date>,
     ) -> Result<TimerState> {
@@ -107,6 +117,8 @@ impl TimerManager {
             id: None,
             task_name,
             description,
+            project,
+            customer,
             start_time: now,
             end_time: None,
             date: now.date(),
@@ -307,6 +319,14 @@ impl TimerManager {
             record.description = description;
         }
 
+        if let Some(project) = timer.project {
+            record.project = project;
+        }
+
+        if let Some(customer) = timer.customer {
+            record.customer = customer;
+        }
+
         Ok(record)
     }
 }
@@ -329,6 +349,8 @@ mod tests {
             id: None,
             task_name: "Test Task".to_string(),
             description: None,
+            project: None,
+            customer: None,
             start_time: now,
             end_time: None,
             date: now.date(),
@@ -353,6 +375,8 @@ mod tests {
             id: None,
             task_name: "Test Task".to_string(),
             description: Some("Test description".to_string()),
+            project: Some("Platform".to_string()),
+            customer: Some("ACME".to_string()),
             start_time: now,
             end_time: None,
             date: now.date(),
@@ -377,7 +401,7 @@ mod tests {
         let (storage, _temp) = create_test_storage();
         let manager = TimerManager::new(storage);
 
-        let result = manager.start("Work".to_string(), None, None, None);
+        let result = manager.start("Work".to_string(), None, None, None, None, None);
         assert!(result.is_ok());
 
         let timer = result.unwrap();
@@ -391,8 +415,8 @@ mod tests {
         let (storage, _temp) = create_test_storage();
         let manager = TimerManager::new(storage);
 
-        let _ = manager.start("Task 1".to_string(), None, None, None);
-        let result = manager.start("Task 2".to_string(), None, None, None);
+        let _ = manager.start("Task 1".to_string(), None, None, None, None, None);
+        let result = manager.start("Task 2".to_string(), None, None, None, None, None);
 
         assert!(result.is_err());
         assert_eq!(
@@ -406,7 +430,7 @@ mod tests {
         let (storage, _temp) = create_test_storage();
         let manager = TimerManager::new(storage);
 
-        let _ = manager.start("Work".to_string(), None, None, None);
+        let _ = manager.start("Work".to_string(), None, None, None, None, None);
         let result = manager.pause();
 
         assert!(result.is_ok());
@@ -420,7 +444,7 @@ mod tests {
         let (storage, _temp) = create_test_storage();
         let manager = TimerManager::new(storage);
 
-        let _ = manager.start("Work".to_string(), None, None, None);
+        let _ = manager.start("Work".to_string(), None, None, None, None, None);
         let _ = manager.pause();
         let result = manager.pause();
 
@@ -441,7 +465,7 @@ mod tests {
         let (storage, _temp) = create_test_storage();
         let manager = TimerManager::new(storage);
 
-        let _ = manager.start("Work".to_string(), None, None, None);
+        let _ = manager.start("Work".to_string(), None, None, None, None, None);
         let _ = manager.pause();
         let result = manager.resume();
 
@@ -456,7 +480,7 @@ mod tests {
         let (storage, _temp) = create_test_storage();
         let manager = TimerManager::new(storage);
 
-        let _ = manager.start("Work".to_string(), None, None, None);
+        let _ = manager.start("Work".to_string(), None, None, None, None, None);
         let paused1 = manager.pause().unwrap();
         assert_eq!(paused1.paused_duration_secs, 0);
 
@@ -473,7 +497,7 @@ mod tests {
         let (storage, _temp) = create_test_storage();
         let manager = TimerManager::new(storage);
 
-        let _ = manager.start("Work".to_string(), None, None, None);
+        let _ = manager.start("Work".to_string(), None, None, None, None, None);
         let result = manager.resume();
 
         assert!(result.is_err());
@@ -493,7 +517,7 @@ mod tests {
         let (storage, _temp) = create_test_storage();
         let manager = TimerManager::new(storage);
 
-        let _ = manager.start("Work".to_string(), None, None, None);
+        let _ = manager.start("Work".to_string(), None, None, None, None, None);
         let result = manager.status().unwrap();
 
         assert!(result.is_some());
@@ -507,7 +531,7 @@ mod tests {
         let (storage, _temp) = create_test_storage();
         let manager = TimerManager::new(storage);
 
-        let _ = manager.start("Work".to_string(), None, None, None);
+        let _ = manager.start("Work".to_string(), None, None, None, None, None);
         let result = manager.stop();
 
         assert!(result.is_ok());
@@ -538,6 +562,8 @@ mod tests {
             Some("Important task".to_string()),
             None,
             None,
+            None,
+            None,
         );
         let work_record = manager.stop().unwrap();
 
@@ -551,7 +577,9 @@ mod tests {
         let manager = TimerManager::new(storage);
 
         // Start
-        let started = manager.start("Task".to_string(), None, None, None).unwrap();
+        let started = manager
+            .start("Task".to_string(), None, None, None, None, None)
+            .unwrap();
         assert_eq!(started.status, TimerStatus::Running);
 
         // Pause
@@ -584,7 +612,9 @@ mod tests {
         let (storage, _temp) = create_test_storage();
         let manager = TimerManager::new(storage);
 
-        let timer = manager.start("Task".to_string(), None, None, None).unwrap();
+        let timer = manager
+            .start("Task".to_string(), None, None, None, None, None)
+            .unwrap();
         let elapsed = manager.get_elapsed_duration(&timer);
 
         // Should be close to 0 since just started
@@ -596,7 +626,7 @@ mod tests {
         let (storage, _temp) = create_test_storage();
         let manager = TimerManager::new(storage);
 
-        let _ = manager.start("Task".to_string(), None, None, None);
+        let _ = manager.start("Task".to_string(), None, None, None, None, None);
         let _ = manager.pause();
 
         let timer = manager.status().unwrap().unwrap();
@@ -638,7 +668,14 @@ mod tests {
         // Start timer with source_record_id = 1, source_record_date = today
         let manager = TimerManager::new(storage1);
         manager
-            .start("Existing Task".to_string(), None, Some(1), Some(today))
+            .start(
+                "Existing Task".to_string(),
+                None,
+                None,
+                None,
+                Some(1),
+                Some(today),
+            )
             .unwrap();
 
         // Stop timer - should update the existing record's end time
@@ -663,5 +700,25 @@ mod tests {
             updated_record.end.hour,
             updated_record.end.minute
         );
+    }
+
+    #[test]
+    fn test_stop_returns_work_record_with_project_and_customer() {
+        let (storage, _temp) = create_test_storage();
+        let manager = TimerManager::new(storage);
+
+        let _ = manager.start(
+            "Work".to_string(),
+            None,
+            Some("Platform Revamp".to_string()),
+            Some("ACME".to_string()),
+            None,
+            None,
+        );
+        let work_record = manager.stop().unwrap();
+
+        assert_eq!(work_record.name, "Work");
+        assert_eq!(work_record.project, "Platform Revamp");
+        assert_eq!(work_record.customer, "ACME");
     }
 }
