@@ -13,10 +13,13 @@ pub enum AppMode {
     TaskPicker,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EditField {
     Name,
     Start,
     End,
+    Project,
+    Customer,
     Description,
 }
 
@@ -201,6 +204,69 @@ impl AppState {
         records.get(self.selected_index).copied()
     }
 
+    pub fn show_project_column(&self) -> bool {
+        self.config.columns.project
+    }
+
+    pub fn show_customer_column(&self) -> bool {
+        self.config.columns.customer
+    }
+
+    pub fn show_description_column(&self) -> bool {
+        self.config.columns.description
+    }
+
+    pub fn visible_edit_fields(&self) -> Vec<EditField> {
+        let mut fields = vec![EditField::Name, EditField::Start, EditField::End];
+        if self.show_project_column() {
+            fields.push(EditField::Project);
+        }
+        if self.show_customer_column() {
+            fields.push(EditField::Customer);
+        }
+        if self.show_description_column() {
+            fields.push(EditField::Description);
+        }
+        fields
+    }
+
+    fn normalize_edit_field(&mut self) {
+        if !self.visible_edit_fields().contains(&self.edit_field) {
+            self.edit_field = EditField::Name;
+        }
+    }
+
+    fn set_input_from_field(&mut self, record: &WorkRecord, field: EditField) {
+        self.input_buffer = match field {
+            EditField::Name => record.name.clone(),
+            EditField::Start => record.start.to_string(),
+            EditField::End => record.end.to_string(),
+            EditField::Project => record.project.clone(),
+            EditField::Customer => record.customer.clone(),
+            EditField::Description => record.description.clone(),
+        };
+        self.time_cursor = 0;
+    }
+
+    fn step_field(&mut self, direction: i32) {
+        let fields = self.visible_edit_fields();
+        if fields.is_empty() {
+            return;
+        }
+
+        let current_index = fields
+            .iter()
+            .position(|field| *field == self.edit_field)
+            .unwrap_or(0);
+        let len = fields.len() as i32;
+        let next_index = (current_index as i32 + direction).rem_euclid(len) as usize;
+        self.edit_field = fields[next_index];
+
+        if let Some(record) = self.get_selected_record().cloned() {
+            self.set_input_from_field(&record, self.edit_field);
+        }
+    }
+
     pub fn move_selection_up(&mut self) {
         if self.selected_index > 0 {
             self.selected_index -= 1;
@@ -221,16 +287,10 @@ impl AppState {
     }
 
     pub fn enter_edit_mode(&mut self) {
-        if let Some(record) = self.get_selected_record() {
-            let input_value = match self.edit_field {
-                EditField::Name => record.name.clone(),
-                EditField::Start => record.start.to_string(),
-                EditField::End => record.end.to_string(),
-                EditField::Description => record.description.clone(),
-            };
+        self.normalize_edit_field();
+        if let Some(record) = self.get_selected_record().cloned() {
             self.mode = AppMode::Edit;
-            self.input_buffer = input_value;
-            self.time_cursor = 0;
+            self.set_input_from_field(&record, self.edit_field);
         }
     }
 
@@ -260,35 +320,12 @@ impl AppState {
     }
 
     pub fn next_field(&mut self) {
-        if let Some(record) = self.get_selected_record() {
-            self.edit_field = match self.edit_field {
-                EditField::Name => {
-                    self.input_buffer = record.start.to_string();
-                    self.time_cursor = 0;
-                    EditField::Start
-                }
-                EditField::Start => {
-                    self.input_buffer = record.end.to_string();
-                    self.time_cursor = 0;
-                    EditField::End
-                }
-                EditField::End => {
-                    self.input_buffer = record.description.clone();
-                    self.time_cursor = 0;
-                    EditField::Description
-                }
-                EditField::Description => {
-                    self.input_buffer = record.name.clone();
-                    self.time_cursor = 0;
-                    EditField::Name
-                }
-            };
-        }
+        self.step_field(1);
     }
 
     pub fn handle_char_input(&mut self, c: char) {
         match self.edit_field {
-            EditField::Name | EditField::Description => {
+            EditField::Name | EditField::Project | EditField::Customer | EditField::Description => {
                 self.input_buffer.push(c);
             }
             EditField::Start | EditField::End => {
@@ -321,7 +358,7 @@ impl AppState {
 
     pub fn handle_backspace(&mut self) {
         match self.edit_field {
-            EditField::Name | EditField::Description => {
+            EditField::Name | EditField::Project | EditField::Customer | EditField::Description => {
                 self.input_buffer.pop();
             }
             EditField::Start | EditField::End => {
@@ -358,6 +395,12 @@ impl AppState {
                             .parse()
                             .map_err(|_| "Invalid end time format (use HH:MM)".to_string())?;
                         record_mut.update_duration();
+                    }
+                    EditField::Project => {
+                        record_mut.project = self.input_buffer.trim().to_string();
+                    }
+                    EditField::Customer => {
+                        record_mut.customer = self.input_buffer.trim().to_string();
                     }
                     EditField::Description => {
                         record_mut.description = self.input_buffer.trim().to_string();
@@ -449,21 +492,13 @@ impl AppState {
     }
 
     pub fn move_field_left(&mut self) {
-        self.edit_field = match self.edit_field {
-            EditField::Name => EditField::Description,
-            EditField::Start => EditField::Name,
-            EditField::End => EditField::Start,
-            EditField::Description => EditField::End,
-        };
+        self.normalize_edit_field();
+        self.step_field(-1);
     }
 
     pub fn move_field_right(&mut self) {
-        self.edit_field = match self.edit_field {
-            EditField::Name => EditField::Start,
-            EditField::Start => EditField::End,
-            EditField::End => EditField::Description,
-            EditField::Description => EditField::Name,
-        };
+        self.normalize_edit_field();
+        self.step_field(1);
     }
 
     pub fn set_current_time_on_field(&mut self) {
@@ -935,9 +970,27 @@ impl AppState {
         storage: &crate::storage::StorageManager,
     ) -> Result<(), String> {
         if let Some(record) = self.get_selected_record() {
+            let description = if record.description.trim().is_empty() {
+                None
+            } else {
+                Some(record.description.clone())
+            };
+            let project = if record.project.trim().is_empty() {
+                None
+            } else {
+                Some(record.project.clone())
+            };
+            let customer = if record.customer.trim().is_empty() {
+                None
+            } else {
+                Some(record.customer.clone())
+            };
+
             match storage.start_timer(
                 record.name.clone(),
-                Some(record.description.clone()),
+                description,
+                project,
+                customer,
                 Some(record.id),
                 Some(self.current_date),
             ) {

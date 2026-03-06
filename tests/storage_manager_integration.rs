@@ -21,6 +21,8 @@ fn test_timer_lifecycle_start_stop() -> Result<()> {
     let timer = manager.start_timer(
         "Integration Test Task".to_string(),
         Some("Testing timer lifecycle".to_string()),
+        Some("Platform".to_string()),
+        Some("ACME".to_string()),
         None,
         None,
     )?;
@@ -30,6 +32,8 @@ fn test_timer_lifecycle_start_stop() -> Result<()> {
         timer.description,
         Some("Testing timer lifecycle".to_string())
     );
+    assert_eq!(timer.project.as_deref(), Some("Platform"));
+    assert_eq!(timer.customer.as_deref(), Some("ACME"));
 
     // Verify timer was saved
     let loaded_timer = manager.load_active_timer()?;
@@ -44,6 +48,8 @@ fn test_timer_lifecycle_start_stop() -> Result<()> {
 
     assert_eq!(record.name, "Integration Test Task");
     assert_eq!(record.description, "Testing timer lifecycle");
+    assert_eq!(record.project, "Platform");
+    assert_eq!(record.customer, "ACME");
     // Note: total_minutes might be 0 if start and stop are in the same minute
     // We just verify the record was created successfully
 
@@ -60,7 +66,7 @@ fn test_timer_pause_resume() -> Result<()> {
     let manager = StorageManager::new_with_dir(temp_dir.path().to_path_buf())?;
 
     // Start a timer
-    manager.start_timer("Pausable Task".to_string(), None, None, None)?;
+    manager.start_timer("Pausable Task".to_string(), None, None, None, None, None)?;
 
     // Wait a bit
     thread::sleep(Duration::from_millis(100));
@@ -114,12 +120,16 @@ fn test_timer_with_source_record() -> Result<()> {
     let timer = manager.start_timer(
         "Original Task".to_string(),
         Some("Continuing work".to_string()),
+        Some("Platform Revamp".to_string()),
+        Some("Contoso".to_string()),
         Some(1),
         Some(today),
     )?;
 
     assert_eq!(timer.source_record_id, Some(1));
     assert_eq!(timer.source_record_date, Some(today));
+    assert_eq!(timer.project.as_deref(), Some("Platform Revamp"));
+    assert_eq!(timer.customer.as_deref(), Some("Contoso"));
 
     // Stop and verify the link is preserved
     thread::sleep(Duration::from_millis(50));
@@ -139,7 +149,14 @@ fn test_end_to_end_workflow_timer_to_saved_record() -> Result<()> {
     let today = OffsetDateTime::now_utc().date();
 
     // 1. Start timer
-    manager.start_timer("Full Workflow Task".to_string(), None, None, None)?;
+    manager.start_timer(
+        "Full Workflow Task".to_string(),
+        None,
+        None,
+        None,
+        None,
+        None,
+    )?;
 
     // 2. Simulate work
     thread::sleep(Duration::from_millis(100));
@@ -282,7 +299,7 @@ fn test_timer_cleared_after_stop() -> Result<()> {
     let manager = StorageManager::new_with_dir(temp_dir.path().to_path_buf())?;
 
     // Start and immediately stop
-    manager.start_timer("Quick Task".to_string(), None, None, None)?;
+    manager.start_timer("Quick Task".to_string(), None, None, None, None, None)?;
     assert!(manager.load_active_timer()?.is_some());
 
     thread::sleep(Duration::from_millis(10));

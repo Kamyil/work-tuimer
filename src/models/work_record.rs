@@ -9,6 +9,10 @@ pub struct WorkRecord {
     pub end: TimePoint,
     pub total_minutes: u32,
     #[serde(default)]
+    pub project: String,
+    #[serde(default)]
+    pub customer: String,
+    #[serde(default)]
     pub description: String,
 }
 
@@ -21,6 +25,8 @@ impl WorkRecord {
             start,
             end,
             total_minutes,
+            project: String::new(),
+            customer: String::new(),
             description: String::new(),
         }
     }
@@ -62,6 +68,8 @@ mod tests {
         assert_eq!(record.start, start);
         assert_eq!(record.end, end);
         assert_eq!(record.total_minutes, 480); // 8 hours
+        assert_eq!(record.project, "");
+        assert_eq!(record.customer, "");
         assert_eq!(record.description, "");
     }
 
@@ -185,6 +193,22 @@ mod tests {
     }
 
     #[test]
+    fn test_project_and_customer_fields() {
+        let start = TimePoint::new(9, 0).unwrap();
+        let end = TimePoint::new(10, 0).unwrap();
+        let mut record = WorkRecord::new(1, "Task".to_string(), start, end);
+
+        assert_eq!(record.project, "");
+        assert_eq!(record.customer, "");
+
+        record.project = "Internal Platform".to_string();
+        record.customer = "ACME".to_string();
+
+        assert_eq!(record.project, "Internal Platform");
+        assert_eq!(record.customer, "ACME");
+    }
+
+    #[test]
     fn test_clone() {
         let start = TimePoint::new(9, 0).unwrap();
         let end = TimePoint::new(17, 0).unwrap();
@@ -196,5 +220,7 @@ mod tests {
         assert_eq!(record1.start, record2.start);
         assert_eq!(record1.end, record2.end);
         assert_eq!(record1.total_minutes, record2.total_minutes);
+        assert_eq!(record1.project, record2.project);
+        assert_eq!(record1.customer, record2.customer);
     }
 }

@@ -16,6 +16,7 @@ Built with Rust and ratatui for efficient time management.
 - **Calendar navigation**: Jump between days, weeks, and months
 - **Arrow keys or Vim motions**: Navigate with arrow keys + Enter, or use h/j/k/l + i for Vim-style workflow
 - **Inline editing with undo/redo**: Fix mistakes in place, up to 50 levels of history
+- **Project/customer metadata**: Track optional `project` and `customer` values for each record
 - **Auto-saves locally per day**: Data stored in a local SQLite database under `dirs::data_local_dir()` (or `./data/work-tuimer.db` fallback)
 - **Optional ticket integration**: Detect and link to JIRA, Linear, GitHub issues from task names - open ticket URLs directly in your browser from the app
 
@@ -90,8 +91,8 @@ cargo build --release
 |-----|--------|
 | `↑/k` | Move selection up |
 | `↓/j` | Move selection down |
-| `←/h` | Move field left (Name → Start → End) |
-| `→/l` | Move field right (Name → Start → End) |
+| `←/h` | Move field left across visible columns |
+| `→/l` | Move field right across visible columns |
 | `[` | Navigate to previous day (auto-saves) |
 | `]` | Navigate to next day (auto-saves) |
 | `C` | Open calendar view for date navigation |
@@ -115,7 +116,7 @@ cargo build --release
 
 | Key | Action |
 |-----|--------|
-| `Tab` | Next field (Name → Start → End → Description → Name) |
+| `Tab` | Next visible field |
 | `Enter` | Save changes and exit edit mode |
 | `Esc` | Cancel and exit edit mode |
 | `Backspace` | Delete character |
@@ -174,6 +175,9 @@ WorkTimer includes a built-in timer system for real-time time tracking. Sessions
 ```bash
 # Start a session
 work-tuimer session start "My Task"
+
+# Start with project/customer metadata
+work-tuimer session start "My Task" --project "Platform" --customer "ACME"
 
 # Check status
 work-tuimer session status
@@ -251,13 +255,26 @@ Available Themes: default, kanagawa, catppuccin, gruvbox, monokai, dracula, ever
 
 **For more info, check [Theme Configuration Guide](docs/THEMING.md)**
 
+## Column Visibility
+
+You can control whether optional columns are shown in the TUI table and edit navigation:
+
+```toml
+[columns]
+project = true
+customer = false
+description = true
+```
+
+Defaults are `project = true`, `customer = false`, `description = true`.
+
 ## Data Storage
 
 Data is stored in SQLite with dedicated tables for daily metadata, work records, and active timer state.
 
 Primary tables:
 - `day_meta` (`date`, `last_id`, `revision`)
-- `work_records` (`date`, `id`, `name`, `start_minutes`, `end_minutes`, `total_minutes`, `description`)
+- `work_records` (`date`, `id`, `name`, `start_minutes`, `end_minutes`, `total_minutes`, `project`, `customer`, `description`)
 - `active_timer` (single-row table for current timer state)
 
 Storage locations (checked in order):

@@ -15,6 +15,7 @@ Sessions track time in real-time with automatic updates, pause/resume support, a
 
 A session is an active timer that tracks time spent on a task. Recorded data:
 - Task name and optional description
+- Optional project and customer metadata
 - Start time
 - Elapsed time (updated in real-time)
 - Pause/resume history
@@ -72,6 +73,9 @@ work-tuimer session start "My Task"
 
 # Start with a description
 work-tuimer session start "Bug Fix" -d "Fixing authentication issue"
+
+# Start with project/customer metadata
+work-tuimer session start "Bug Fix" --project "Platform" --customer "ACME"
 ```
 
 This creates a new work record and starts tracking immediately.
@@ -80,6 +84,8 @@ Output:
 ```
 ✓ Session started
   Task: My Task
+  Project: Platform
+  Customer: ACME
   Description: Optional description
   Started at: 14:30:45
 ```
@@ -97,6 +103,8 @@ Output:
   Status: Running
   Elapsed: 1h 23m 45s
   Started at: 14:30:45
+  Project: Platform
+  Customer: ACME
   Description: Optional description
 ```
 

@@ -176,11 +176,20 @@ impl StorageManager {
         &self,
         task_name: String,
         description: Option<String>,
+        project: Option<String>,
+        customer: Option<String>,
         source_record_id: Option<u32>,
         source_record_date: Option<time::Date>,
     ) -> Result<TimerState> {
         let timer_manager = self.create_timer_manager();
-        timer_manager.start(task_name, description, source_record_id, source_record_date)
+        timer_manager.start(
+            task_name,
+            description,
+            project,
+            customer,
+            source_record_id,
+            source_record_date,
+        )
     }
 
     pub fn stop_timer(&self) -> Result<crate::models::WorkRecord> {
@@ -302,6 +311,7 @@ impl SqliteRepository {
         let conn = self.open_connection()?;
         Self::apply_database_pragmas(&conn)?;
         Self::initialize_schema(&conn)?;
+        Self::apply_schema_migrations(&conn)?;
         drop(conn);
 
         self
@@ -351,6 +361,8 @@ impl SqliteRepository {
                 start_minutes INTEGER NOT NULL,
                 end_minutes INTEGER NOT NULL,
                 total_minutes INTEGER NOT NULL,
+                project TEXT NOT NULL DEFAULT '',
+                customer TEXT NOT NULL DEFAULT '',
                 description TEXT NOT NULL DEFAULT '',
                 PRIMARY KEY (date, id),
                 FOREIGN KEY (date) REFERENCES day_meta(date) ON DELETE CASCADE
@@ -364,6 +376,8 @@ impl SqliteRepository {
                 id INTEGER,
                 task_name TEXT NOT NULL,
                 description TEXT,
+                project TEXT,
+                customer TEXT,
                 start_time TEXT NOT NULL,
                 end_time TEXT,
                 date TEXT NOT NULL,
@@ -380,6 +394,47 @@ impl SqliteRepository {
         .context("Failed to initialize SQLite schema")?;
 
         Ok(())
+    }
+
+    fn apply_schema_migrations(conn: &Connection) -> Result<()> {
+        Self::ensure_column_exists(conn, "work_records", "project", "TEXT NOT NULL DEFAULT ''")?;
+        Self::ensure_column_exists(conn, "work_records", "customer", "TEXT NOT NULL DEFAULT ''")?;
+        Self::ensure_column_exists(conn, "active_timer", "project", "TEXT")?;
+        Self::ensure_column_exists(conn, "active_timer", "customer", "TEXT")?;
+        Ok(())
+    }
+
+    fn ensure_column_exists(
+        conn: &Connection,
+        table: &str,
+        column: &str,
+        definition: &str,
+    ) -> Result<()> {
+        if Self::has_column(conn, table, column)? {
+            return Ok(());
+        }
+
+        let alter_sql = format!("ALTER TABLE {table} ADD COLUMN {column} {definition}");
+        conn.execute(&alter_sql, [])
+            .context(format!("Failed to add column {column} to {table}"))?;
+        Ok(())
+    }
+
+    fn has_column(conn: &Connection, table: &str, column: &str) -> Result<bool> {
+        let pragma_sql = format!("PRAGMA table_info({table})");
+        let mut stmt = conn
+            .prepare(&pragma_sql)
+            .context(format!("Failed to inspect table schema for {table}"))?;
+        let mut rows = stmt.query([]).context("Failed to query table_info")?;
+
+        while let Some(row) = rows.next().context("Failed to read table_info row")? {
+            let column_name = row.get::<_, String>(1)?;
+            if column_name == column {
+                return Ok(true);
+            }
+        }
+
+        Ok(false)
     }
 
     fn load_day(&self, date: &Date) -> Result<DayData> {
@@ -410,7 +465,7 @@ impl SqliteRepository {
         let mut stmt = conn
             .prepare(
                 "
-                SELECT id, name, start_minutes, end_minutes, total_minutes, description
+                SELECT id, name, start_minutes, end_minutes, total_minutes, project, customer, description
                 FROM work_records
                 WHERE date = ?1
                 ORDER BY id
@@ -428,7 +483,9 @@ impl SqliteRepository {
             let start_minutes = i64_to_u32(row.get::<_, i64>(2)?, "work_records.start_minutes")?;
             let end_minutes = i64_to_u32(row.get::<_, i64>(3)?, "work_records.end_minutes")?;
             let total_minutes = i64_to_u32(row.get::<_, i64>(4)?, "work_records.total_minutes")?;
-            let description = row.get::<_, Option<String>>(5)?.unwrap_or_default();
+            let project = row.get::<_, Option<String>>(5)?.unwrap_or_default();
+            let customer = row.get::<_, Option<String>>(6)?.unwrap_or_default();
+            let description = row.get::<_, Option<String>>(7)?.unwrap_or_default();
 
             let start = TimePoint::from_minutes_since_midnight(start_minutes)
                 .map_err(|e| anyhow!(e))
@@ -443,6 +500,8 @@ impl SqliteRepository {
                 start,
                 end,
                 total_minutes,
+                project,
+                customer,
                 description,
             };
 
@@ -517,6 +576,8 @@ impl SqliteRepository {
                     id,
                     task_name,
                     description,
+                    project,
+                    customer,
                     start_time,
                     end_time,
                     date,
@@ -536,16 +597,18 @@ impl SqliteRepository {
                         row.get::<_, Option<i64>>(0)?,
                         row.get::<_, String>(1)?,
                         row.get::<_, Option<String>>(2)?,
-                        row.get::<_, String>(3)?,
+                        row.get::<_, Option<String>>(3)?,
                         row.get::<_, Option<String>>(4)?,
                         row.get::<_, String>(5)?,
-                        row.get::<_, String>(6)?,
-                        row.get::<_, i64>(7)?,
-                        row.get::<_, Option<String>>(8)?,
-                        row.get::<_, String>(9)?,
-                        row.get::<_, String>(10)?,
-                        row.get::<_, Option<i64>>(11)?,
-                        row.get::<_, Option<String>>(12)?,
+                        row.get::<_, Option<String>>(6)?,
+                        row.get::<_, String>(7)?,
+                        row.get::<_, String>(8)?,
+                        row.get::<_, i64>(9)?,
+                        row.get::<_, Option<String>>(10)?,
+                        row.get::<_, String>(11)?,
+                        row.get::<_, String>(12)?,
+                        row.get::<_, Option<i64>>(13)?,
+                        row.get::<_, Option<String>>(14)?,
                     ))
                 },
             )
@@ -562,28 +625,30 @@ impl SqliteRepository {
             .transpose()?;
         let task_name = row.1;
         let description = row.2;
-        let start_time = parse_datetime(&row.3, "active_timer.start_time")?;
+        let project = row.3;
+        let customer = row.4;
+        let start_time = parse_datetime(&row.5, "active_timer.start_time")?;
         let end_time = row
-            .4
+            .6
             .as_deref()
             .map(|v| parse_datetime(v, "active_timer.end_time"))
             .transpose()?;
-        let date = parse_date(&row.5).context("Invalid active_timer.date")?;
-        let status = parse_timer_status(&row.6)?;
-        let paused_duration_secs = row.7;
+        let date = parse_date(&row.7).context("Invalid active_timer.date")?;
+        let status = parse_timer_status(&row.8)?;
+        let paused_duration_secs = row.9;
         let paused_at = row
-            .8
+            .10
             .as_deref()
             .map(|v| parse_datetime(v, "active_timer.paused_at"))
             .transpose()?;
-        let created_at = parse_datetime(&row.9, "active_timer.created_at")?;
-        let updated_at = parse_datetime(&row.10, "active_timer.updated_at")?;
+        let created_at = parse_datetime(&row.11, "active_timer.created_at")?;
+        let updated_at = parse_datetime(&row.12, "active_timer.updated_at")?;
         let source_record_id = row
-            .11
+            .13
             .map(|v| i64_to_u32(v, "active_timer.source_record_id"))
             .transpose()?;
         let source_record_date = row
-            .12
+            .14
             .as_deref()
             .map(parse_date)
             .transpose()
@@ -593,6 +658,8 @@ impl SqliteRepository {
             id,
             task_name,
             description,
+            project,
+            customer,
             start_time,
             end_time,
             date,
@@ -769,9 +836,11 @@ impl SqliteRepository {
                         start_minutes,
                         end_minutes,
                         total_minutes,
+                        project,
+                        customer,
                         description
                     )
-                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
+                    VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
                     ",
                 )
                 .context("Failed to prepare work record insert statement")?;
@@ -784,6 +853,8 @@ impl SqliteRepository {
                     i64::from(record.start.to_minutes_since_midnight()),
                     i64::from(record.end.to_minutes_since_midnight()),
                     i64::from(record.total_minutes),
+                    &record.project,
+                    &record.customer,
                     &record.description,
                 ])
                 .context("Failed to insert work record")?;
@@ -827,6 +898,8 @@ impl SqliteRepository {
         let end_time = timer.end_time.map(format_datetime).transpose()?;
         let date = format_date(timer.date);
         let status = timer_status_to_str(timer.status);
+        let project = timer.project.as_deref();
+        let customer = timer.customer.as_deref();
         let paused_at = timer.paused_at.map(format_datetime).transpose()?;
         let created_at = format_datetime(timer.created_at)?;
         let updated_at = format_datetime(timer.updated_at)?;
@@ -840,6 +913,8 @@ impl SqliteRepository {
                 id,
                 task_name,
                 description,
+                project,
+                customer,
                 start_time,
                 end_time,
                 date,
@@ -865,12 +940,16 @@ impl SqliteRepository {
                 ?10,
                 ?11,
                 ?12,
-                ?13
+                ?13,
+                ?14,
+                ?15
             )
             ON CONFLICT(singleton_id) DO UPDATE SET
                 id = excluded.id,
                 task_name = excluded.task_name,
                 description = excluded.description,
+                project = excluded.project,
+                customer = excluded.customer,
                 start_time = excluded.start_time,
                 end_time = excluded.end_time,
                 date = excluded.date,
@@ -886,6 +965,8 @@ impl SqliteRepository {
                 id,
                 &timer.task_name,
                 timer.description.as_deref(),
+                project,
+                customer,
                 start_time,
                 end_time,
                 date,
@@ -1126,6 +1207,8 @@ mod tests {
             id: None,
             task_name: "Test Timer".to_string(),
             description: Some("Timer description".to_string()),
+            project: Some("Platform".to_string()),
+            customer: Some("ACME".to_string()),
             start_time: now,
             end_time: None,
             date: now.date(),
@@ -1199,7 +1282,10 @@ mod tests {
         storage.save_active_timer(&timer).unwrap();
         let loaded = storage.load_active_timer().unwrap();
         assert!(loaded.is_some());
-        assert_eq!(loaded.unwrap().task_name, "Test Timer");
+        let loaded_timer = loaded.unwrap();
+        assert_eq!(loaded_timer.task_name, "Test Timer");
+        assert_eq!(loaded_timer.project.as_deref(), Some("Platform"));
+        assert_eq!(loaded_timer.customer.as_deref(), Some("ACME"));
 
         storage.clear_active_timer().unwrap();
         assert!(storage.load_active_timer().unwrap().is_none());
@@ -1367,5 +1453,96 @@ mod tests {
         assert!(!diagnostics.active_timer_present);
         assert_eq!(diagnostics.legacy_day_json_files, 1);
         assert_eq!(diagnostics.legacy_timer_json_files, 0);
+    }
+
+    #[test]
+    fn test_schema_migration_adds_project_and_customer_columns() {
+        let temp_dir = TempDir::new().unwrap();
+        let db_path = temp_dir.path().join(DATABASE_FILE_NAME);
+
+        {
+            let conn = Connection::open(&db_path).unwrap();
+            conn.execute_batch(
+                "
+                CREATE TABLE meta (
+                    key TEXT PRIMARY KEY,
+                    value TEXT NOT NULL
+                );
+
+                CREATE TABLE day_meta (
+                    date TEXT PRIMARY KEY,
+                    last_id INTEGER NOT NULL DEFAULT 0 CHECK (last_id >= 0),
+                    revision INTEGER NOT NULL DEFAULT 0 CHECK (revision >= 0)
+                );
+
+                CREATE TABLE work_records (
+                    date TEXT NOT NULL,
+                    id INTEGER NOT NULL,
+                    name TEXT NOT NULL,
+                    start_minutes INTEGER NOT NULL,
+                    end_minutes INTEGER NOT NULL,
+                    total_minutes INTEGER NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    PRIMARY KEY (date, id),
+                    FOREIGN KEY (date) REFERENCES day_meta(date) ON DELETE CASCADE
+                );
+
+                CREATE TABLE active_timer (
+                    singleton_id INTEGER PRIMARY KEY CHECK (singleton_id = 1),
+                    id INTEGER,
+                    task_name TEXT NOT NULL,
+                    description TEXT,
+                    start_time TEXT NOT NULL,
+                    end_time TEXT,
+                    date TEXT NOT NULL,
+                    status TEXT NOT NULL CHECK (status IN ('running', 'paused', 'stopped')),
+                    paused_duration_secs INTEGER NOT NULL CHECK (paused_duration_secs >= 0),
+                    paused_at TEXT,
+                    created_at TEXT NOT NULL,
+                    updated_at TEXT NOT NULL,
+                    source_record_id INTEGER,
+                    source_record_date TEXT
+                );
+                ",
+            )
+            .unwrap();
+        }
+
+        let _storage = Storage::new_with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let conn = Connection::open(db_path).unwrap();
+
+        let work_records_has_project: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('work_records') WHERE name = 'project'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let work_records_has_customer: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('work_records') WHERE name = 'customer'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let active_timer_has_project: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('active_timer') WHERE name = 'project'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+        let active_timer_has_customer: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM pragma_table_info('active_timer') WHERE name = 'customer'",
+                [],
+                |row| row.get(0),
+            )
+            .unwrap();
+
+        assert_eq!(work_records_has_project, 1);
+        assert_eq!(work_records_has_customer, 1);
+        assert_eq!(active_timer_has_project, 1);
+        assert_eq!(active_timer_has_customer, 1);
     }
 }

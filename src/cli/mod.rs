@@ -38,6 +38,14 @@ pub enum SessionCommands {
         /// Optional task description
         #[arg(short, long)]
         description: Option<String>,
+
+        /// Optional project name
+        #[arg(long)]
+        project: Option<String>,
+
+        /// Optional customer name
+        #[arg(long)]
+        customer: Option<String>,
     },
 
     /// Stop the running timer session
@@ -57,9 +65,12 @@ pub enum SessionCommands {
 pub fn handle_command(cmd: Commands, storage: Storage) -> Result<()> {
     match cmd {
         Commands::Session { command } => match command {
-            SessionCommands::Start { task, description } => {
-                handle_start(task, description, storage)
-            }
+            SessionCommands::Start {
+                task,
+                description,
+                project,
+                customer,
+            } => handle_start(task, description, project, customer, storage),
             SessionCommands::Stop => handle_stop(storage),
             SessionCommands::Pause => handle_pause(storage),
             SessionCommands::Resume => handle_resume(storage),
@@ -108,7 +119,13 @@ fn handle_doctor(storage: Storage) -> Result<()> {
 }
 
 /// Start a new session
-fn handle_start(task: String, description: Option<String>, storage: Storage) -> Result<()> {
+fn handle_start(
+    task: String,
+    description: Option<String>,
+    project: Option<String>,
+    customer: Option<String>,
+    storage: Storage,
+) -> Result<()> {
     let timer_manager = TimerManager::new(storage);
 
     // Trim task name
@@ -117,11 +134,24 @@ fn handle_start(task: String, description: Option<String>, storage: Storage) -> 
         return Err(anyhow::anyhow!("Task name cannot be empty"));
     }
 
-    let timer = timer_manager.start(task, description, None, None)?;
+    let project = project
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+    let customer = customer
+        .map(|value| value.trim().to_string())
+        .filter(|value| !value.is_empty());
+
+    let timer = timer_manager.start(task, description, project, customer, None, None)?;
 
     let start_time = format_time(timer.start_time);
     println!("✓ Session started");
     println!("  Task: {}", timer.task_name);
+    if let Some(project) = &timer.project {
+        println!("  Project: {}", project);
+    }
+    if let Some(customer) = &timer.customer {
+        println!("  Customer: {}", customer);
+    }
     if let Some(desc) = &timer.description {
         println!("  Description: {}", desc);
     }
@@ -152,6 +182,12 @@ fn handle_stop(storage: Storage) -> Result<()> {
 
     println!("✓ Session stopped");
     println!("  Task: {}", timer.task_name);
+    if let Some(project) = &timer.project {
+        println!("  Project: {}", project);
+    }
+    if let Some(customer) = &timer.customer {
+        println!("  Customer: {}", customer);
+    }
     println!("  Duration: {}", formatted_duration);
     println!("  Started at: {}", start_time);
     println!("  Ended at: {}", end_time);
@@ -219,6 +255,12 @@ fn handle_status(storage: Storage) -> Result<()> {
             );
             println!("  Elapsed: {}", formatted_duration);
             println!("  Started at: {}", start_time);
+            if let Some(project) = &timer.project {
+                println!("  Project: {}", project);
+            }
+            if let Some(customer) = &timer.customer {
+                println!("  Customer: {}", customer);
+            }
             if let Some(desc) = &timer.description {
                 println!("  Description: {}", desc);
             }
@@ -299,5 +341,38 @@ mod tests {
     fn test_cli_doctor_command_parse() {
         let cli = Cli::try_parse_from(["work-tuimer", "doctor"]).unwrap();
         assert!(matches!(cli.command, Commands::Doctor));
+    }
+
+    #[test]
+    fn test_cli_session_start_parses_project_and_customer() {
+        let cli = Cli::try_parse_from([
+            "work-tuimer",
+            "session",
+            "start",
+            "My Task",
+            "--project",
+            "Internal Platform",
+            "--customer",
+            "ACME",
+        ])
+        .unwrap();
+
+        let Commands::Session { command } = cli.command else {
+            panic!("Expected session command");
+        };
+
+        match command {
+            SessionCommands::Start {
+                task,
+                project,
+                customer,
+                ..
+            } => {
+                assert_eq!(task, "My Task");
+                assert_eq!(project.as_deref(), Some("Internal Platform"));
+                assert_eq!(customer.as_deref(), Some("ACME"));
+            }
+            _ => panic!("Expected session start command"),
+        }
     }
 }

@@ -13,6 +13,9 @@ pub struct Config {
 
     #[serde(default)]
     pub theme: ThemeConfig,
+
+    #[serde(default)]
+    pub columns: ColumnVisibilityConfig,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -41,6 +44,38 @@ pub struct TrackerConfig {
     /// URL template for worklog page: {base_url}, {ticket}
     #[serde(default)]
     pub worklog_url: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ColumnVisibilityConfig {
+    #[serde(default = "default_show_project")]
+    pub project: bool,
+    #[serde(default = "default_show_customer")]
+    pub customer: bool,
+    #[serde(default = "default_show_description")]
+    pub description: bool,
+}
+
+fn default_show_project() -> bool {
+    true
+}
+
+fn default_show_customer() -> bool {
+    false
+}
+
+fn default_show_description() -> bool {
+    true
+}
+
+impl Default for ColumnVisibilityConfig {
+    fn default() -> Self {
+        Self {
+            project: default_show_project(),
+            customer: default_show_customer(),
+            description: default_show_description(),
+        }
+    }
 }
 
 impl Config {
@@ -526,6 +561,9 @@ mod tests {
         let config = Config::default();
         assert_eq!(config.integrations.default_tracker, None);
         assert!(config.integrations.trackers.is_empty());
+        assert!(config.columns.project);
+        assert!(!config.columns.customer);
+        assert!(config.columns.description);
     }
 
     #[test]
@@ -533,6 +571,7 @@ mod tests {
         let config = Config::default();
         let toml_str = toml::to_string_pretty(&config).expect("Failed to serialize");
         assert!(toml_str.contains("integrations"));
+        assert!(toml_str.contains("columns"));
     }
 
     #[test]
@@ -557,6 +596,37 @@ worklog_url = "{base_url}/browse/{ticket}?focusedWorklogId=-1"
         let tracker = config.integrations.trackers.get("my-jira").unwrap();
         assert_eq!(tracker.base_url, "https://test.atlassian.net");
         assert_eq!(tracker.ticket_patterns[0], "^PROJ-\\d+$");
+        assert!(config.columns.project);
+        assert!(!config.columns.customer);
+        assert!(config.columns.description);
+    }
+
+    #[test]
+    fn test_columns_config_deserialization() {
+        let toml_str = r#"
+[columns]
+project = false
+customer = true
+description = false
+        "#;
+
+        let config: Config = toml::from_str(toml_str).expect("Failed to deserialize");
+        assert!(!config.columns.project);
+        assert!(config.columns.customer);
+        assert!(!config.columns.description);
+    }
+
+    #[test]
+    fn test_columns_config_partial_defaults() {
+        let toml_str = r#"
+[columns]
+customer = true
+        "#;
+
+        let config: Config = toml::from_str(toml_str).expect("Failed to deserialize");
+        assert!(config.columns.project);
+        assert!(config.columns.customer);
+        assert!(config.columns.description);
     }
 
     #[test]
@@ -847,6 +917,7 @@ badge = "lightmagenta"
                 active: "custom1".to_string(),
                 custom,
             },
+            columns: ColumnVisibilityConfig::default(),
         };
 
         let theme = config.get_theme();

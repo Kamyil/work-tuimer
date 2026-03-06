@@ -245,57 +245,30 @@ fn render_records(frame: &mut Frame, area: Rect, app: &AppState) {
                 "📋"
             };
 
-            // Determine display text and styles for each field
-            let (name_display, start_display, end_display, description_display) = if is_editing {
+            let format_name_with_badge = |display_name: &str, ticket_source: &str| {
+                if app.config.has_integrations()
+                    && crate::integrations::extract_ticket_from_name(ticket_source).is_some()
+                {
+                    format!("🎫 {} {}", icon, display_name)
+                } else {
+                    format!("{} {}", icon, display_name)
+                }
+            };
+
+            let mut name_display = format_name_with_badge(&record.name, &record.name);
+            let mut start_display = record.start.to_string();
+            let mut end_display = record.end.to_string();
+            let mut project_display = record.project.clone();
+            let mut customer_display = record.customer.clone();
+            let mut description_display = record.description.clone();
+
+            if is_editing {
                 match app.edit_field {
                     crate::ui::EditField::Name => {
-                        // Add cursor indicator to show user is in edit mode
-                        let text_with_cursor = format!("{}▏", app.input_buffer);
-
-                        // Extract and display ticket badge if present and config exists
-                        let display = if app.config.has_integrations() {
-                            if crate::integrations::extract_ticket_from_name(&app.input_buffer)
-                                .is_some()
-                            {
-                                format!("🎫 {} {}", icon, text_with_cursor)
-                            } else {
-                                format!("{} {}", icon, text_with_cursor)
-                            }
-                        } else {
-                            format!("{} {}", icon, text_with_cursor)
-                        };
-                        (
-                            display,
-                            record.start.to_string(),
-                            record.end.to_string(),
-                            record.description.clone(),
-                        )
-                    }
-                    crate::ui::EditField::Description => {
-                        // Add cursor indicator to show user is in edit mode
-                        let description_with_cursor = format!("{}▏", app.input_buffer);
-
-                        // Extract and display ticket badge if present and config exists
-                        let display = if app.config.has_integrations() {
-                            if crate::integrations::extract_ticket_from_name(&record.name).is_some()
-                            {
-                                format!("🎫 {} {}", icon, record.name)
-                            } else {
-                                format!("{} {}", icon, record.name)
-                            }
-                        } else {
-                            format!("{} {}", icon, record.name)
-                        };
-                        (
-                            display,
-                            record.start.to_string(),
-                            record.end.to_string(),
-                            description_with_cursor,
-                        )
+                        let name_with_cursor = format!("{}▏", app.input_buffer);
+                        name_display = format_name_with_badge(&name_with_cursor, &app.input_buffer);
                     }
                     crate::ui::EditField::Start | crate::ui::EditField::End => {
-                        // Add cursor position indicator for time fields
-                        let time_str = &app.input_buffer;
                         let positions = [0, 1, 3, 4];
                         let cursor_pos = if app.time_cursor < positions.len() {
                             positions[app.time_cursor]
@@ -304,8 +277,8 @@ fn render_records(frame: &mut Frame, area: Rect, app: &AppState) {
                         };
 
                         let mut display = String::new();
-                        for (i, ch) in time_str.chars().enumerate() {
-                            if i == cursor_pos {
+                        for (index, ch) in app.input_buffer.chars().enumerate() {
+                            if index == cursor_pos {
                                 display.push('[');
                                 display.push(ch);
                                 display.push(']');
@@ -314,162 +287,129 @@ fn render_records(frame: &mut Frame, area: Rect, app: &AppState) {
                             }
                         }
 
-                        // Extract and display ticket badge if present and config exists
-                        let name_with_badge = if app.config.has_integrations() {
-                            if crate::integrations::extract_ticket_from_name(&record.name).is_some()
-                            {
-                                format!("🎫 {} {}", icon, record.name)
-                            } else {
-                                format!("{} {}", icon, record.name)
-                            }
-                        } else {
-                            format!("{} {}", icon, record.name)
-                        };
-
                         match app.edit_field {
-                            crate::ui::EditField::Start => (
-                                name_with_badge,
-                                display,
-                                record.end.to_string(),
-                                record.description.clone(),
-                            ),
-                            crate::ui::EditField::End => (
-                                name_with_badge,
-                                record.start.to_string(),
-                                display,
-                                record.description.clone(),
-                            ),
-                            _ => unreachable!(),
+                            crate::ui::EditField::Start => start_display = display,
+                            crate::ui::EditField::End => end_display = display,
+                            _ => {}
                         }
                     }
-                }
-            } else {
-                // Extract and display ticket badge if present and config exists (non-editing mode)
-                let name_with_badge = if app.config.has_integrations() {
-                    if crate::integrations::extract_ticket_from_name(&record.name).is_some() {
-                        format!("🎫 {} {}", icon, record.name)
-                    } else {
-                        format!("{} {}", icon, record.name)
+                    crate::ui::EditField::Project => {
+                        project_display = format!("{}▏", app.input_buffer);
                     }
+                    crate::ui::EditField::Customer => {
+                        customer_display = format!("{}▏", app.input_buffer);
+                    }
+                    crate::ui::EditField::Description => {
+                        description_display = format!("{}▏", app.input_buffer);
+                    }
+                }
+            }
+
+            let field_style = |field: crate::ui::EditField, default_style: Style| {
+                if is_editing && app.edit_field == field {
+                    Style::default()
+                        .bg(app.theme.edit_bg)
+                        .fg(app.theme.primary_text)
+                        .add_modifier(Modifier::BOLD)
+                } else if is_selected && app.edit_field == field {
+                    Style::default()
+                        .bg(app.theme.focus_bg)
+                        .fg(app.theme.primary_text)
+                        .add_modifier(Modifier::BOLD)
                 } else {
-                    format!("{} {}", icon, record.name)
-                };
-                (
-                    name_with_badge,
-                    record.start.to_string(),
-                    record.end.to_string(),
-                    record.description.clone(),
-                )
+                    default_style
+                }
             };
 
-            // Apply styles based on focus and edit state
-            let name_style = if is_editing && matches!(app.edit_field, crate::ui::EditField::Name) {
-                Style::default()
-                    .bg(app.theme.edit_bg)
-                    .fg(app.theme.primary_text)
-                    .add_modifier(Modifier::BOLD)
-            } else if is_selected && matches!(app.edit_field, crate::ui::EditField::Name) {
-                Style::default()
-                    .bg(app.theme.focus_bg)
-                    .fg(app.theme.primary_text)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default()
-            };
-
-            let start_style = if is_editing && matches!(app.edit_field, crate::ui::EditField::Start)
-            {
-                Style::default()
-                    .bg(app.theme.edit_bg)
-                    .fg(app.theme.primary_text)
-                    .add_modifier(Modifier::BOLD)
-            } else if is_selected && matches!(app.edit_field, crate::ui::EditField::Start) {
-                Style::default()
-                    .bg(app.theme.focus_bg)
-                    .fg(app.theme.primary_text)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(app.theme.success)
-            };
-
-            let end_style = if is_editing && matches!(app.edit_field, crate::ui::EditField::End) {
-                Style::default()
-                    .bg(app.theme.edit_bg)
-                    .fg(app.theme.primary_text)
-                    .add_modifier(Modifier::BOLD)
-            } else if is_selected && matches!(app.edit_field, crate::ui::EditField::End) {
-                Style::default()
-                    .bg(app.theme.focus_bg)
-                    .fg(app.theme.primary_text)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(app.theme.error)
-            };
-
-            let description_style = if is_editing
-                && matches!(app.edit_field, crate::ui::EditField::Description)
-            {
-                Style::default()
-                    .bg(app.theme.edit_bg)
-                    .fg(app.theme.primary_text)
-                    .add_modifier(Modifier::BOLD)
-            } else if is_selected && matches!(app.edit_field, crate::ui::EditField::Description) {
-                Style::default()
-                    .bg(app.theme.focus_bg)
-                    .fg(app.theme.primary_text)
-                    .add_modifier(Modifier::BOLD)
-            } else {
-                Style::default().fg(app.theme.primary_text)
-            };
-
-            Row::new(vec![
-                Cell::from(name_display).style(name_style),
-                Cell::from(start_display).style(start_style),
-                Cell::from(end_display).style(end_style),
+            let mut cells = vec![
+                Cell::from(name_display)
+                    .style(field_style(crate::ui::EditField::Name, Style::default())),
+                Cell::from(start_display).style(field_style(
+                    crate::ui::EditField::Start,
+                    Style::default().fg(app.theme.success),
+                )),
+                Cell::from(end_display).style(field_style(
+                    crate::ui::EditField::End,
+                    Style::default().fg(app.theme.error),
+                )),
                 Cell::from(record.format_duration()).style(Style::default().fg(app.theme.badge)),
-                Cell::from(description_display).style(description_style),
-            ])
-            .style(style)
+            ];
+
+            if app.show_project_column() {
+                cells.push(Cell::from(project_display).style(field_style(
+                    crate::ui::EditField::Project,
+                    Style::default().fg(app.theme.primary_text),
+                )));
+            }
+
+            if app.show_customer_column() {
+                cells.push(Cell::from(customer_display).style(field_style(
+                    crate::ui::EditField::Customer,
+                    Style::default().fg(app.theme.primary_text),
+                )));
+            }
+
+            if app.show_description_column() {
+                cells.push(Cell::from(description_display).style(field_style(
+                    crate::ui::EditField::Description,
+                    Style::default().fg(app.theme.primary_text),
+                )));
+            }
+
+            Row::new(cells).style(style)
         })
         .collect();
 
-    let table = Table::new(
-        rows,
-        [
-            Constraint::Percentage(25),
-            Constraint::Length(10),
-            Constraint::Length(10),
-            Constraint::Length(12),
-            Constraint::Percentage(30),
-        ],
-    )
-    .header(
-        Row::new(vec![
-            Cell::from("📝 Task Name"),
-            Cell::from("🕐 Start"),
-            Cell::from("🕐 End"),
-            Cell::from("⏱  Duration"),
-            Cell::from("📄 Description"),
-        ])
-        .style(
-            Style::default()
-                .fg(app.theme.warning)
-                .add_modifier(Modifier::BOLD),
+    let mut constraints = vec![
+        Constraint::Min(18),
+        Constraint::Length(10),
+        Constraint::Length(10),
+        Constraint::Length(12),
+    ];
+    let mut header_cells = vec![
+        Cell::from("📝 Task"),
+        Cell::from("🕐 Start"),
+        Cell::from("🕐 End"),
+        Cell::from("⏱  Duration"),
+    ];
+
+    if app.show_project_column() {
+        constraints.push(Constraint::Length(16));
+        header_cells.push(Cell::from("🗂 Project"));
+    }
+
+    if app.show_customer_column() {
+        constraints.push(Constraint::Length(16));
+        header_cells.push(Cell::from("👤 Customer"));
+    }
+
+    if app.show_description_column() {
+        constraints.push(Constraint::Min(20));
+        header_cells.push(Cell::from("📄 Description"));
+    }
+
+    let table = Table::new(rows, constraints)
+        .header(
+            Row::new(header_cells)
+                .style(
+                    Style::default()
+                        .fg(app.theme.warning)
+                        .add_modifier(Modifier::BOLD),
+                )
+                .bottom_margin(1),
         )
-        .bottom_margin(1),
-    )
-    .block(
-        Block::default()
-            .borders(Borders::ALL)
-            .border_type(BorderType::Rounded)
-            .border_style(Style::default().fg(app.theme.active_border))
-            .title("📊 Work Records")
-            .title_style(
-                Style::default()
-                    .fg(app.theme.highlight_text)
-                    .add_modifier(Modifier::BOLD),
-            ),
-    );
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .border_type(BorderType::Rounded)
+                .border_style(Style::default().fg(app.theme.active_border))
+                .title("📊 Work Records")
+                .title_style(
+                    Style::default()
+                        .fg(app.theme.highlight_text)
+                        .add_modifier(Modifier::BOLD),
+                ),
+        );
 
     // Use stateful rendering to handle scrolling
     let mut table_state = TableState::default()
