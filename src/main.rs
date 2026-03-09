@@ -208,7 +208,11 @@ fn handle_key_event(app: &mut AppState, key: KeyEvent, storage: &mut storage::St
             _ => {}
         },
         ui::AppMode::Edit => match key.code {
-            KeyCode::Esc => app.exit_edit_mode(),
+            KeyCode::Esc => {
+                let _ = app.save_edit();
+                let _ = storage.save(&app.day_data);
+                app.last_file_modified = storage.get_last_modified(&app.current_date);
+            }
             KeyCode::Tab => app.next_field(),
             _ if is_enter_key => {
                 let _ = app.save_edit();
@@ -454,5 +458,23 @@ mod tests {
 
         assert!(matches!(app.mode, AppMode::Browse));
         assert_eq!(app.get_selected_record().unwrap().name, "Updated Task");
+    }
+
+    #[test]
+    fn test_escape_saves_in_edit_mode() {
+        let mut app = create_test_app();
+        let mut storage = create_test_storage();
+
+        app.enter_edit_mode();
+        app.input_buffer = "Saved With Escape".to_string();
+
+        handle_key_event(
+            &mut app,
+            key_event(KeyCode::Esc, KeyModifiers::NONE),
+            &mut storage,
+        );
+
+        assert!(matches!(app.mode, AppMode::Browse));
+        assert_eq!(app.get_selected_record().unwrap().name, "Saved With Escape");
     }
 }

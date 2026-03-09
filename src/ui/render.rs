@@ -510,7 +510,7 @@ fn render_footer(frame: &mut Frame, area: Rect, app: &AppState) {
     let (help_text, mode_color, mode_label) = match app.mode {
         crate::ui::AppMode::Browse => (browse_help, app.theme.info, "BROWSE"),
         crate::ui::AppMode::Edit => (
-            "Tab: Next field | Enter: Save | Esc: Cancel",
+            "Tab: Next field | Enter/Esc: Save",
             app.theme.warning,
             "EDIT",
         ),
