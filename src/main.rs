@@ -281,9 +281,11 @@ fn handle_key_event(app: &mut AppState, key: KeyEvent, storage: &mut storage::St
 }
 
 fn is_enter_key(key: KeyEvent) -> bool {
-    matches!(key.code, KeyCode::Enter | KeyCode::Char('\n') | KeyCode::Char('\r'))
-        || (key.modifiers == KeyModifiers::CONTROL
-            && matches!(key.code, KeyCode::Char('j') | KeyCode::Char('m')))
+    matches!(
+        key.code,
+        KeyCode::Enter | KeyCode::Char('\n') | KeyCode::Char('\r')
+    ) || (key.modifiers == KeyModifiers::CONTROL
+        && matches!(key.code, KeyCode::Char('j') | KeyCode::Char('m')))
 }
 
 fn execute_command_action(
@@ -400,11 +402,26 @@ mod tests {
     #[test]
     fn test_recognizes_keypad_enter_variants() {
         assert!(is_enter_key(key_event(KeyCode::Enter, KeyModifiers::NONE)));
-        assert!(is_enter_key(key_event(KeyCode::Char('\n'), KeyModifiers::NONE)));
-        assert!(is_enter_key(key_event(KeyCode::Char('\r'), KeyModifiers::NONE)));
-        assert!(is_enter_key(key_event(KeyCode::Char('j'), KeyModifiers::CONTROL)));
-        assert!(is_enter_key(key_event(KeyCode::Char('m'), KeyModifiers::CONTROL)));
-        assert!(!is_enter_key(key_event(KeyCode::Char('j'), KeyModifiers::NONE)));
+        assert!(is_enter_key(key_event(
+            KeyCode::Char('\n'),
+            KeyModifiers::NONE
+        )));
+        assert!(is_enter_key(key_event(
+            KeyCode::Char('\r'),
+            KeyModifiers::NONE
+        )));
+        assert!(is_enter_key(key_event(
+            KeyCode::Char('j'),
+            KeyModifiers::CONTROL
+        )));
+        assert!(is_enter_key(key_event(
+            KeyCode::Char('m'),
+            KeyModifiers::CONTROL
+        )));
+        assert!(!is_enter_key(key_event(
+            KeyCode::Char('j'),
+            KeyModifiers::NONE
+        )));
     }
 
     #[test]
