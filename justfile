@@ -88,10 +88,25 @@ release version:
     echo "📝 Updating AUR packaging metadata..."
     sed -i.bak "s/^pkgver=.*/pkgver=$VERSION/" packaging/aur/PKGBUILD
     rm packaging/aur/PKGBUILD.bak
-    (
-        cd packaging/aur
-        makepkg --printsrcinfo > .SRCINFO
-    )
+    printf '%s\n' \
+        'pkgbase = work-tuimer' \
+        $'\tpkgdesc = Simple, keyboard-driven TUI for time-tracking' \
+        $"\tpkgver = $VERSION" \
+        $'\tpkgrel = 1' \
+        $'\turl = https://github.com/Kamyil/work-tuimer' \
+        $'\tarch = x86_64' \
+        $'\tarch = aarch64' \
+        $'\tlicense = MIT' \
+        $'\tmakedepends = cargo' \
+        $'\tmakedepends = rust' \
+        $'\tdepends = gcc-libs' \
+        $'\tdepends = glibc' \
+        $'\toptions = !lto' \
+        $"\tsource = work-tuimer-$VERSION.tar.gz::https://github.com/Kamyil/work-tuimer/archive/refs/tags/v$VERSION.tar.gz" \
+        $'\tb2sums = SKIP' \
+        '' \
+        'pkgname = work-tuimer' \
+        > packaging/aur/.SRCINFO
     echo "✓ AUR metadata updated in packaging/aur"
     
     # Run tests to ensure everything works

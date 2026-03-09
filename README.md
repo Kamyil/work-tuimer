@@ -324,6 +324,8 @@ This will:
 5. Trigger GitHub Actions to build binaries for all platforms
 6. Automatically upload the binaries to a GitHub Release
 
+The AUR metadata refresh is generated directly by the release script, so this flow does not require `makepkg` to be installed locally.
+
 You can track the build progress in the [Actions tab](https://github.com/sst/work-tuimer/actions).
 
 ## License
