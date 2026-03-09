@@ -24,11 +24,13 @@ fmt-check:
 fmt:
     cargo fmt
 
-# Create a full release: bump version, commit, tag, push, and publish to cargo
+# Create a full release: bump version, sync AUR metadata, commit, tag, push, and publish to cargo
 # Usage: just release v0.3.2
 release version:
     #!/usr/bin/env bash
     set -euo pipefail
+    
+    AUR_REPO_PATH="../aur-work-tuimer"
     
     # Validate version format (v followed by semver)
     if ! [[ "{{version}}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
@@ -43,9 +45,25 @@ release version:
         exit 1
     fi
     
-    # Check for uncommitted changes
-    if ! git diff-index --quiet HEAD --; then
+    # Check for uncommitted changes in the main repo
+    if [[ -n "$(git status --porcelain)" ]]; then
         echo "You have uncommitted changes. Please commit or stash them first."
+        exit 1
+    fi
+    
+    # Check AUR repo availability and cleanliness
+    if [[ ! -d "$AUR_REPO_PATH" ]]; then
+        echo "AUR repo not found at $AUR_REPO_PATH"
+        exit 1
+    fi
+    
+    if ! git -C "$AUR_REPO_PATH" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        echo "AUR repo path is not a git repository: $AUR_REPO_PATH"
+        exit 1
+    fi
+    
+    if [[ -n "$(git -C "$AUR_REPO_PATH" status --porcelain)" ]]; then
+        echo "AUR repo has uncommitted changes. Please commit or stash them first: $AUR_REPO_PATH"
         exit 1
     fi
     
@@ -66,14 +84,29 @@ release version:
     fi
     echo "✓ Version updated in Cargo.toml"
     
+    # Update AUR packaging files in the main repo
+    echo "📝 Updating AUR packaging metadata..."
+    sed -i.bak "s/^pkgver=.*/pkgver=$VERSION/" packaging/aur/PKGBUILD
+    rm packaging/aur/PKGBUILD.bak
+    (
+        cd packaging/aur
+        makepkg --printsrcinfo > .SRCINFO
+    )
+    echo "✓ AUR metadata updated in packaging/aur"
+    
     # Run tests to ensure everything works
     echo "Running tests..."
     nix-shell --run "cargo test --quiet"
     echo "✓ Tests passed"
     
+    # Sync AUR packaging files to the AUR repo
+    cp packaging/aur/PKGBUILD "$AUR_REPO_PATH/PKGBUILD"
+    cp packaging/aur/.SRCINFO "$AUR_REPO_PATH/.SRCINFO"
+    echo "✓ Synced AUR metadata to $AUR_REPO_PATH"
+    
     # Commit version bump
     echo "Committing version bump..."
-    git add Cargo.toml Cargo.lock
+    git add Cargo.toml Cargo.lock packaging/aur/PKGBUILD packaging/aur/.SRCINFO
     git commit -m "Bump version to $VERSION"
     echo "✓ Version bump committed"
     
@@ -86,6 +119,13 @@ release version:
     git push origin main
     git push origin "{{version}}"
     echo "✓ Changes and tag pushed"
+    
+    # Commit and push AUR repo changes after the release tag is available
+    echo "Committing AUR package update..."
+    git -C "$AUR_REPO_PATH" add PKGBUILD .SRCINFO
+    git -C "$AUR_REPO_PATH" commit -m "Update to v$VERSION"
+    git -C "$AUR_REPO_PATH" push origin HEAD
+    echo "✓ AUR repo updated"
     
     # Publish to crates.io
     echo "Publishing to crates.io..."
@@ -103,6 +143,8 @@ release-check version:
     #!/usr/bin/env bash
     set -euo pipefail
     
+    AUR_REPO_PATH="../aur-work-tuimer"
+    
     # Validate version format
     if ! [[ "{{version}}" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[a-zA-Z0-9]+)?$ ]]; then
         echo "❌ Invalid version format: {{version}}"
@@ -119,11 +161,22 @@ release-check version:
     echo "New version:     $VERSION"
     echo ""
     
-    # Check git status
-    if git diff-index --quiet HEAD --; then
+    # Check main repo status
+    if [[ -z "$(git status --porcelain)" ]]; then
         echo "✓ No uncommitted changes"
     else
         echo "❌ Uncommitted changes detected"
+    fi
+    
+    # Check AUR repo status
+    if [[ -d "$AUR_REPO_PATH" ]] && git -C "$AUR_REPO_PATH" rev-parse --is-inside-work-tree >/dev/null 2>&1; then
+        if [[ -z "$(git -C "$AUR_REPO_PATH" status --porcelain)" ]]; then
+            echo "✓ AUR repo is clean: $AUR_REPO_PATH"
+        else
+            echo "❌ AUR repo has uncommitted changes: $AUR_REPO_PATH"
+        fi
+    else
+        echo "❌ AUR repo not available: $AUR_REPO_PATH"
     fi
     
     # Check if tag exists

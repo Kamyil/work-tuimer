@@ -123,15 +123,15 @@ This directory contains packaging files for various package managers.
 
 2. Set up SSH keys for AUR
 
-3. Clone the AUR repository:
+3. Clone the AUR repository next to the main repo:
    ```bash
-   git clone ssh://aur@aur.archlinux.org/work-tuimer.git aur-repo
+   git clone ssh://aur@aur.archlinux.org/work-tuimer.git ../aur-work-tuimer
    ```
 
 4. Copy files and commit:
    ```bash
-   cp packaging/aur/{PKGBUILD,.SRCINFO} aur-repo/
-   cd aur-repo
+   cp packaging/aur/{PKGBUILD,.SRCINFO} ../aur-work-tuimer/
+   cd ../aur-work-tuimer
    makepkg --printsrcinfo > .SRCINFO
    git add PKGBUILD .SRCINFO
    git commit -m "Initial release: work-tuimer 0.3.0"

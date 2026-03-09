@@ -318,9 +318,11 @@ just release v0.2.0
 
 This will:
 1. Create a git tag for the version
-2. Push the tag to GitHub
-3. Trigger GitHub Actions to build binaries for all platforms
-4. Automatically upload the binaries to a GitHub Release
+2. Update `packaging/aur/PKGBUILD` and `packaging/aur/.SRCINFO`
+3. Sync and push the AUR repo at `../aur-work-tuimer`
+4. Push the version commit and tag to GitHub
+5. Trigger GitHub Actions to build binaries for all platforms
+6. Automatically upload the binaries to a GitHub Release
 
 You can track the build progress in the [Actions tab](https://github.com/sst/work-tuimer/actions).
 
