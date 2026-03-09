@@ -101,22 +101,22 @@ release version:
     echo "📝 Updating AUR packaging metadata..."
     sed -i.bak "s/^pkgver=.*/pkgver=$VERSION/" packaging/aur/PKGBUILD
     rm packaging/aur/PKGBUILD.bak
-    printf '%s\n' \
+    printf '%b\n' \
         'pkgbase = work-tuimer' \
-        $'\tpkgdesc = Simple, keyboard-driven TUI for time-tracking' \
-        $"\tpkgver = $VERSION" \
-        $'\tpkgrel = 1' \
-        $'\turl = https://github.com/Kamyil/work-tuimer' \
-        $'\tarch = x86_64' \
-        $'\tarch = aarch64' \
-        $'\tlicense = MIT' \
-        $'\tmakedepends = cargo' \
-        $'\tmakedepends = rust' \
-        $'\tdepends = gcc-libs' \
-        $'\tdepends = glibc' \
-        $'\toptions = !lto' \
-        $"\tsource = work-tuimer-$VERSION.tar.gz::https://github.com/Kamyil/work-tuimer/archive/refs/tags/v$VERSION.tar.gz" \
-        $'\tb2sums = SKIP' \
+        '\tpkgdesc = Simple, keyboard-driven TUI for time-tracking' \
+        "\tpkgver = $VERSION" \
+        '\tpkgrel = 1' \
+        '\turl = https://github.com/Kamyil/work-tuimer' \
+        '\tarch = x86_64' \
+        '\tarch = aarch64' \
+        '\tlicense = MIT' \
+        '\tmakedepends = cargo' \
+        '\tmakedepends = rust' \
+        '\tdepends = gcc-libs' \
+        '\tdepends = glibc' \
+        '\toptions = !lto' \
+        "\tsource = work-tuimer-$VERSION.tar.gz::https://github.com/Kamyil/work-tuimer/archive/refs/tags/v$VERSION.tar.gz" \
+        '\tb2sums = SKIP' \
         '' \
         'pkgname = work-tuimer' \
         > packaging/aur/.SRCINFO
