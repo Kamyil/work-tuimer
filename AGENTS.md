@@ -8,29 +8,6 @@
 - **ONLY** use `gh issue list`, `gh issue view`, `gh pr list`, `gh pr view` for reading
 - After implementing fixes, inform the user so they can manage the issue themselves
 
-## Task Management
-
-### TASKS.md Usage
-When working on any feature or bug fix:
-1. **Always read TASKS.md first** to check current status
-2. **Add new tasks** when starting work - break down complex work into clear steps
-3. **Update status in real-time** as you progress:
-   - `[ ]` Pending → `[~]` In Progress → `[x]` Completed
-4. **Move completed tasks** to the "Completed Tasks" section with timestamp
-5. **Add context notes** for important decisions, blockers, or next steps
-6. **Keep tasks specific and actionable** - prefer multiple small tasks over one large task
-
-### Task Workflow Example
-```markdown
-## Current Sprint
-
-### Feature: Add CSV Export
-- [~] Create CSV export module in `src/export/csv.rs`
-- [ ] Add export command to CLI
-- [ ] Add tests for CSV formatting
-- [ ] Update README with export documentation
-```
-
 ## Build/Test/Lint Commands
 - **Build**: `cargo build`
 - **Run**: `cargo run`
