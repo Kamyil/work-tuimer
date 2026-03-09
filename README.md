@@ -326,6 +326,8 @@ This will:
 
 The AUR metadata refresh is generated directly by the release script, so this flow does not require `makepkg` to be installed locally.
 
+When syncing `../aur-work-tuimer`, the release script temporarily switches that checkout to its `master` branch before committing and pushing, because the AUR remote only accepts updates there.
+
 You can track the build progress in the [Actions tab](https://github.com/sst/work-tuimer/actions).
 
 ## License

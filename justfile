@@ -67,6 +67,19 @@ release version:
         exit 1
     fi
     
+    AUR_ORIGINAL_BRANCH="$(git -C "$AUR_REPO_PATH" branch --show-current)"
+    if [[ -z "$AUR_ORIGINAL_BRANCH" ]]; then
+        echo "AUR repo must be on a local branch: $AUR_REPO_PATH"
+        exit 1
+    fi
+    
+    cleanup_aur_branch() {
+        if [[ "$(git -C "$AUR_REPO_PATH" branch --show-current)" != "$AUR_ORIGINAL_BRANCH" ]]; then
+            git -C "$AUR_REPO_PATH" checkout "$AUR_ORIGINAL_BRANCH" >/dev/null 2>&1 || true
+        fi
+    }
+    trap cleanup_aur_branch EXIT
+    
     # Extract version without 'v' prefix
     VERSION="{{version}}"
     VERSION="${VERSION#v}"
@@ -137,9 +150,13 @@ release version:
     
     # Commit and push AUR repo changes after the release tag is available
     echo "Committing AUR package update..."
+    if [[ "$AUR_ORIGINAL_BRANCH" != "master" ]]; then
+        git -C "$AUR_REPO_PATH" checkout master
+        git -C "$AUR_REPO_PATH" pull --ff-only origin master
+    fi
     git -C "$AUR_REPO_PATH" add PKGBUILD .SRCINFO
     git -C "$AUR_REPO_PATH" commit -m "Update to v$VERSION"
-    git -C "$AUR_REPO_PATH" push origin HEAD
+    git -C "$AUR_REPO_PATH" push origin master
     echo "✓ AUR repo updated"
     
     # Publish to crates.io
