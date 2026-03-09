@@ -118,7 +118,7 @@ cargo build --release
 |-----|--------|
 | `Tab` | Next visible field |
 | `Enter` | Save changes and exit edit mode |
-| `Esc` | Cancel and exit edit mode |
+| `Esc` | Save changes and exit edit mode |
 | `Backspace` | Delete character |
 | Any char | Insert character |
 
