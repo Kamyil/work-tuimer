@@ -39,15 +39,34 @@ release version:
         exit 1
     fi
     
-    # Check if tag already exists
-    if git rev-parse "{{version}}" >/dev/null 2>&1; then
-        echo "Tag {{version}} already exists"
-        exit 1
-    fi
-    
     # Check for uncommitted changes in the main repo
     if [[ -n "$(git status --porcelain)" ]]; then
         echo "You have uncommitted changes. Please commit or stash them first."
+        exit 1
+    fi
+    
+    CURRENT_BRANCH="$(git branch --show-current)"
+    if [[ "$CURRENT_BRANCH" != "main" ]]; then
+        echo "Release must be run from the local main branch"
+        exit 1
+    fi
+    
+    git fetch origin --tags
+    
+    if ! git rev-parse --verify origin/main >/dev/null 2>&1; then
+        echo "Remote branch origin/main is not available"
+        exit 1
+    fi
+    
+    read -r MAIN_AHEAD MAIN_BEHIND <<< "$(git rev-list --left-right --count HEAD...origin/main)"
+    if [[ "$MAIN_BEHIND" -ne 0 ]]; then
+        echo "Local main is behind origin/main by $MAIN_BEHIND commit(s). Pull or rebase before releasing."
+        exit 1
+    fi
+    
+    # Check if tag already exists
+    if git rev-parse "{{version}}" >/dev/null 2>&1; then
+        echo "Tag {{version}} already exists"
         exit 1
     fi
     
@@ -186,6 +205,9 @@ release-check version:
     VERSION="{{version}}"
     VERSION="${VERSION#v}"
     CURRENT_VERSION=$(grep '^version = ' Cargo.toml | head -1 | sed 's/version = "\(.*\)"/\1/')
+    CURRENT_BRANCH="$(git branch --show-current)"
+    
+    git fetch origin --tags >/dev/null 2>&1
     
     echo "🔍 Release check for {{version}}"
     echo ""
@@ -198,6 +220,26 @@ release-check version:
         echo "✓ No uncommitted changes"
     else
         echo "❌ Uncommitted changes detected"
+    fi
+    
+    # Check main branch sync status
+    if [[ "$CURRENT_BRANCH" != "main" ]]; then
+        echo "❌ Current branch is $CURRENT_BRANCH; run releases from main"
+    elif ! git rev-parse --verify origin/main >/dev/null 2>&1; then
+        echo "❌ origin/main is not available"
+    else
+        read -r MAIN_AHEAD MAIN_BEHIND <<< "$(git rev-list --left-right --count HEAD...origin/main)"
+        if [[ "$MAIN_BEHIND" -eq 0 ]]; then
+            if [[ "$MAIN_AHEAD" -eq 0 ]]; then
+                echo "✓ Local main matches origin/main"
+            else
+                echo "✓ Local main is ahead of origin/main by $MAIN_AHEAD commit(s)"
+            fi
+        elif [[ "$MAIN_AHEAD" -eq 0 ]]; then
+            echo "❌ Local main is behind origin/main by $MAIN_BEHIND commit(s)"
+        else
+            echo "❌ Local main has diverged from origin/main (ahead $MAIN_AHEAD, behind $MAIN_BEHIND)"
+        fi
     fi
     
     # Check AUR repo status
