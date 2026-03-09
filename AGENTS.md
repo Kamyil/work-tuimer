@@ -37,6 +37,7 @@ When working on any feature or bug fix:
 - **Test**: `cargo test` (run all tests) or `cargo test <test_name>` (single test)
 - **Check**: `cargo check` (fast type checking without compilation)
 - **Clippy**: `cargo clippy` (linting)
+- **Quality Gate**: Every work item must pass `cargo fmt --check`, `cargo clippy`, and tests before it is considered done
 
 ## Code Style
 - **Language**: Rust 2024 edition
