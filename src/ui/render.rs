@@ -32,6 +32,11 @@ fn calculate_timer_elapsed(timer: &TimerState) -> StdDuration {
     elapsed_std.saturating_sub(paused_duration_std)
 }
 
+fn is_break_like_task(task_name: &str) -> bool {
+    let name_lower = task_name.to_lowercase();
+    name_lower.contains("break") || name_lower.contains("lunch")
+}
+
 pub fn render(frame: &mut Frame, app: &AppState) {
     // Layout changes if timer is active: add timer bar at top
     let main_constraints = if app.active_timer.is_some() {
@@ -233,7 +238,7 @@ fn render_records(frame: &mut Frame, area: Rect, app: &AppState) {
             // Add icon/emoji based on task type, with timer indicator if active
             let icon = if has_active_timer {
                 "⏱ " // Timer icon for active timers
-            } else if record.name.to_lowercase().contains("break") {
+            } else if is_break_like_task(&record.name) {
                 "☕"
             } else if record.name.to_lowercase().contains("meeting") {
                 "👥"
@@ -449,7 +454,7 @@ fn render_grouped_totals(frame: &mut Frame, area: Rect, app: &AppState) {
             let mins = minutes % 60;
 
             // Choose icon based on task type
-            let icon = if name.to_lowercase().contains("break") {
+            let icon = if is_break_like_task(name) {
                 "☕"
             } else if name.to_lowercase().contains("meeting") {
                 "👥"
@@ -1176,7 +1181,7 @@ fn render_task_picker(frame: &mut Frame, app: &AppState) {
                 };
 
                 // Add icon based on task type
-                let icon = if name.to_lowercase().contains("break") {
+                let icon = if is_break_like_task(name) {
                     "☕"
                 } else if name.to_lowercase().contains("meeting") {
                     "👥"
