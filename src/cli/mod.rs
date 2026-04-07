@@ -1,8 +1,14 @@
-use crate::storage::Storage;
-use crate::timer::TimerManager;
+use std::time::Duration;
+
 use anyhow::Result;
 use clap::{Parser, Subcommand};
-use std::time::Duration;
+use time::OffsetDateTime;
+
+use crate::storage::Storage;
+use crate::timer::TimerManager;
+
+mod export;
+use export::ExportCommands;
 
 /// WorkTimer CLI - Automatic time tracking
 #[derive(Parser)]
@@ -25,6 +31,12 @@ pub enum Commands {
 
     /// Show storage and migration diagnostics
     Doctor,
+
+    /// Export work records to CSV
+    Export {
+        #[command(subcommand)]
+        command: ExportCommands,
+    },
 }
 
 /// Session management commands
@@ -77,6 +89,7 @@ pub fn handle_command(cmd: Commands, storage: Storage) -> Result<()> {
             SessionCommands::Status => handle_status(storage),
         },
         Commands::Doctor => handle_doctor(storage),
+        Commands::Export { command } => export::handle_export(command, storage),
     }
 }
 
@@ -273,8 +286,8 @@ fn handle_status(storage: Storage) -> Result<()> {
     Ok(())
 }
 
-/// Format time::OffsetDateTime for display (HH:MM:SS)
-fn format_time(dt: time::OffsetDateTime) -> String {
+/// Format OffsetDateTime for display (HH:MM:SS)
+fn format_time(dt: OffsetDateTime) -> String {
     format!("{:02}:{:02}:{:02}", dt.hour(), dt.minute(), dt.second())
 }
 
