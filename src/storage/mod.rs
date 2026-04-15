@@ -296,6 +296,10 @@ impl Storage {
         self.repository.diagnostics()
     }
 
+    pub fn list_dates_with_records(&self) -> Result<Vec<Date>> {
+        self.repository.list_dates_with_records()
+    }
+
     #[cfg(test)]
     fn get_db_path(&self) -> PathBuf {
         self.repository.db_path.clone()
@@ -735,6 +739,33 @@ impl SqliteRepository {
             legacy_day_json_files,
             legacy_timer_json_files,
         })
+    }
+
+    fn list_dates_with_records(&self) -> Result<Vec<Date>> {
+        let conn = self.open_connection()?;
+        let mut stmt = conn
+            .prepare(
+                "
+                SELECT DISTINCT date
+                FROM work_records
+                ORDER BY date
+                ",
+            )
+            .context("Failed to prepare query for exportable dates")?;
+
+        let mut rows = stmt
+            .query([])
+            .context("Failed to query dates with work records")?;
+        let mut dates = Vec::new();
+
+        while let Some(row) = rows.next().context("Failed to read date row")? {
+            let raw_date = row.get::<_, String>(0)?;
+            let date = parse_date(&raw_date)
+                .context(format!("Failed to parse date '{}' from storage", raw_date))?;
+            dates.push(date);
+        }
+
+        Ok(dates)
     }
 
     fn count_legacy_json_files(data_dir: &Path) -> Result<(u64, u64)> {
@@ -1249,6 +1280,30 @@ mod tests {
         assert_eq!(loaded.work_records.len(), 2);
         assert_eq!(loaded.work_records.get(&1).unwrap().name, "Coding");
         assert_eq!(loaded.work_records.get(&2).unwrap().name, "Meeting");
+    }
+
+    #[test]
+    fn test_list_dates_with_records_only_returns_non_empty_days() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Storage::new_with_dir(temp_dir.path().to_path_buf()).unwrap();
+
+        let date1 = Date::from_calendar_date(2025, time::Month::November, 6).unwrap();
+        let date2 = Date::from_calendar_date(2025, time::Month::November, 7).unwrap();
+        let date3 = Date::from_calendar_date(2025, time::Month::November, 8).unwrap();
+
+        let mut day1 = DayData::new(date1);
+        day1.add_record(create_test_record(1, "Coding"));
+        storage.save(&day1).unwrap();
+
+        // Saving an empty day should not make it exportable.
+        storage.save(&DayData::new(date2)).unwrap();
+
+        let mut day3 = DayData::new(date3);
+        day3.add_record(create_test_record(1, "Meeting"));
+        storage.save(&day3).unwrap();
+
+        let dates = storage.list_dates_with_records().unwrap();
+        assert_eq!(dates, vec![date1, date3]);
     }
 
     #[test]

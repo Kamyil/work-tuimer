@@ -215,6 +215,48 @@ It prints:
 - Active timer presence
 - Legacy JSON backup file counts
 
+## CSV Export
+
+Use `export` to write work records as CSV from the local SQLite data.
+
+### Commands
+
+```bash
+# List dates that currently have records (one date per line)
+work-tuimer export list-dates
+
+# Export one date
+work-tuimer export date 2026-04-07
+
+# Export one date to stdout
+work-tuimer export date 2026-04-07 --stdout
+
+# Export a bounded range (only dates with records are included)
+work-tuimer export range 2026-04-01 2026-04-07
+
+# Export all dates with records
+work-tuimer export range all
+
+# Export one file per date
+work-tuimer export range all --individual --out-dir ./exports
+```
+
+### Output behavior
+
+- Default file output goes to the same directory as `work-tuimer.db` (or `./data` fallback location).
+- `--out-dir <DIR>` writes files to a custom directory (created if missing).
+- `--stdout` prints CSV to terminal instead of writing files.
+- `--stdout` cannot be combined with `--out-dir` or `--individual`.
+- `export date` fails if the specified date has no records.
+- `export range` fails if no dates with records match the selected range.
+
+### File naming
+
+- Single date: `work-records-YYYY-MM-DD.csv`
+- Range: `work-records-YYYY-MM-DD_to_YYYY-MM-DD.csv`
+- All dates (combined): `work-records-all.csv`
+- Individual range export: one `work-records-YYYY-MM-DD.csv` per date
+
 ## Issue Tracker Integration
 
 WorkTimer supports automatic ticket detection from task names and browser integration for **any** issue tracker (JIRA, Linear, GitHub Issues, GitLab, Azure DevOps, etc.). 
