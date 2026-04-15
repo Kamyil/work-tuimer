@@ -8,7 +8,8 @@ use time::macros::format_description;
 
 use crate::storage::Storage;
 
-const EXPORT_CSV_HEADER: &str = "date,task name,start time,end time,description,project,total time";
+const EXPORT_CSV_HEADER: &str =
+    "date,task name,start time,end time,description,project,customer,total time";
 
 /// Export commands
 #[derive(Subcommand)]
@@ -217,6 +218,8 @@ fn build_csv_for_dates(storage: &Storage, dates: &[Date]) -> Result<String> {
             csv.push(',');
             csv.push_str(&csv_escape(&record.project));
             csv.push(',');
+            csv.push_str(&csv_escape(&record.customer));
+            csv.push(',');
             csv.push_str(&csv_escape(&format_total_time(record.total_minutes)));
             csv.push('\n');
         }
@@ -309,6 +312,7 @@ mod tests {
         let mut day = DayData::new(date);
         let mut record = create_record(1, record_name, 9, 11);
         record.project = "ProjectA".to_string();
+        record.customer = "CustomerA".to_string();
         record.description = "Focused work".to_string();
         day.add_record(record);
         storage.save(&day).unwrap();
@@ -442,6 +446,19 @@ mod tests {
         assert_eq!(csv_escape("simple"), "simple");
         assert_eq!(csv_escape("hello,world"), "\"hello,world\"");
         assert_eq!(csv_escape("say \"hello\""), "\"say \"\"hello\"\"\"");
+    }
+
+    #[test]
+    fn test_build_csv_for_dates_includes_customer_column() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Storage::new_with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let date = Date::from_calendar_date(2025, Month::November, 3).unwrap();
+        store_day(&storage, date, "Customer task");
+
+        let csv = build_csv_for_dates(&storage, &[date]).unwrap();
+
+        assert_eq!(csv.lines().next().unwrap(), EXPORT_CSV_HEADER);
+        assert!(csv.contains(",ProjectA,CustomerA,02:00\n"));
     }
 
     #[test]

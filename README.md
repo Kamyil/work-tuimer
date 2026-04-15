@@ -250,6 +250,10 @@ work-tuimer export range all --individual --out-dir ./exports
 - `export date` fails if the specified date has no records.
 - `export range` fails if no dates with records match the selected range.
 
+### CSV columns
+
+- Exported columns: `date`, `task name`, `start time`, `end time`, `description`, `project`, `customer`, `total time`
+
 ### File naming
 
 - Single date: `work-records-YYYY-MM-DD.csv`
