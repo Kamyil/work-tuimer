@@ -167,7 +167,7 @@ fn handle_key_event(app: &mut AppState, key: KeyEvent, storage: &mut storage::St
             KeyCode::Left | KeyCode::Char('h') => app.move_field_left(),
             KeyCode::Right | KeyCode::Char('l') => app.move_field_right(),
             KeyCode::Char('i') => app.enter_edit_mode(),
-            KeyCode::Char('c') => app.change_task_name(),
+            KeyCode::Char('c') => change_task_name(app, storage),
             KeyCode::Char('n') => {
                 app.add_new_record();
                 let _ = storage.save(&app.day_data);
@@ -292,6 +292,17 @@ fn is_enter_key(key: KeyEvent) -> bool {
         && matches!(key.code, KeyCode::Char('j') | KeyCode::Char('m')))
 }
 
+fn change_task_name(app: &mut AppState, storage: &storage::StorageManager) {
+    let task_names = storage
+        .recent_task_names(app.current_date, 3)
+        .unwrap_or_else(|err| {
+            app.last_error_message = Some(format!("Failed to load recent tasks: {}", err));
+            app.get_unique_task_names()
+        });
+
+    app.change_task_name(task_names);
+}
+
 fn execute_command_action(
     app: &mut AppState,
     action: ui::app_state::CommandAction,
@@ -305,7 +316,7 @@ fn execute_command_action(
         CommandAction::MoveLeft => app.move_field_left(),
         CommandAction::MoveRight => app.move_field_right(),
         CommandAction::Edit => app.enter_edit_mode(),
-        CommandAction::Change => app.change_task_name(),
+        CommandAction::Change => change_task_name(app, storage),
         CommandAction::New => {
             app.add_new_record();
             let _ = storage.save(&app.day_data);

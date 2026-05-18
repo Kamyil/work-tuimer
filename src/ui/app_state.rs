@@ -72,6 +72,7 @@ pub struct AppState {
     pub theme: Theme,
     pub last_error_message: Option<String>,
     pub task_picker_selected: usize,
+    pub task_picker_tasks: Vec<String>,
     pub active_timer: Option<TimerState>,
     pub last_file_modified: Option<std::time::SystemTime>,
     history: History,
@@ -193,6 +194,7 @@ impl AppState {
             theme,
             last_error_message: None,
             task_picker_selected: 0,
+            task_picker_tasks: Vec::new(),
             active_timer: None,
             last_file_modified: None,
             history: History::new(),
@@ -294,14 +296,14 @@ impl AppState {
         }
     }
 
-    pub fn change_task_name(&mut self) {
+    pub fn change_task_name(&mut self, task_names: Vec<String>) {
         if matches!(self.edit_field, EditField::Name) && self.get_selected_record().is_some() {
             // Check if there are any existing tasks to pick from
-            let task_names = self.get_unique_task_names();
             if !task_names.is_empty() {
                 // Open task picker if tasks exist
                 self.input_buffer.clear();
                 self.task_picker_selected = 0;
+                self.task_picker_tasks = task_names;
                 self.mode = AppMode::TaskPicker;
             } else {
                 // Go directly to edit mode if no tasks exist
@@ -662,7 +664,7 @@ impl AppState {
             })
             .collect();
 
-        results.sort_by(|a, b| b.1.cmp(&a.1));
+        results.sort_by_key(|(_, score, _)| std::cmp::Reverse(*score));
         results
     }
 
@@ -880,10 +882,15 @@ impl AppState {
     pub fn close_task_picker(&mut self) {
         // Cancel and return to Browse mode
         self.input_buffer.clear();
+        self.task_picker_tasks.clear();
         self.mode = AppMode::Browse;
     }
 
     pub fn get_unique_task_names(&self) -> Vec<String> {
+        if !self.task_picker_tasks.is_empty() {
+            return self.task_picker_tasks.clone();
+        }
+
         use std::collections::HashSet;
 
         let mut seen = HashSet::new();
@@ -949,6 +956,7 @@ impl AppState {
         }
 
         self.input_buffer.clear();
+        self.task_picker_tasks.clear();
         self.mode = AppMode::Browse;
     }
 

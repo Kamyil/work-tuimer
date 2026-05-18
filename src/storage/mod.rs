@@ -2,7 +2,7 @@ use crate::models::{DayData, TimePoint, WorkRecord};
 use crate::timer::{TimerState, TimerStatus};
 use anyhow::{Context, Result, anyhow};
 use rusqlite::{Connection, OptionalExtension, Transaction, params};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::time::{Duration as StdDuration, SystemTime};
@@ -154,6 +154,10 @@ impl StorageManager {
         self.file_modified_times.get(date).copied().flatten()
     }
 
+    pub fn recent_task_names(&self, date: Date, days_back: u8) -> Result<Vec<String>> {
+        self.storage.recent_task_names(date, days_back)
+    }
+
     #[allow(dead_code)]
     pub fn save_active_timer(&self, timer: &TimerState) -> Result<()> {
         self.storage.save_active_timer(timer)
@@ -298,6 +302,10 @@ impl Storage {
 
     pub fn list_dates_with_records(&self) -> Result<Vec<Date>> {
         self.repository.list_dates_with_records()
+    }
+
+    pub fn recent_task_names(&self, date: Date, days_back: u8) -> Result<Vec<String>> {
+        self.repository.recent_task_names(date, days_back)
     }
 
     #[cfg(test)]
@@ -766,6 +774,43 @@ impl SqliteRepository {
         }
 
         Ok(dates)
+    }
+
+    fn recent_task_names(&self, date: Date, days_back: u8) -> Result<Vec<String>> {
+        let start_date = (0..days_back).try_fold(date, |date, _| {
+            date.previous_day()
+                .context("Failed to calculate recent task date range")
+        })?;
+
+        let conn = self.open_connection()?;
+        let mut stmt = conn
+            .prepare(
+                "
+                SELECT name
+                FROM work_records
+                WHERE date >= ?1 AND date <= ?2
+                ORDER BY date DESC, id DESC
+                ",
+            )
+            .context("Failed to prepare recent task names query")?;
+
+        let mut rows = stmt
+            .query(params![format_date(start_date), format_date(date)])
+            .context("Failed to query recent task names")?;
+
+        let mut seen = HashSet::new();
+        let mut task_names = Vec::new();
+
+        while let Some(row) = rows.next().context("Failed to read recent task name row")? {
+            let name = row.get::<_, String>(0)?.trim().to_string();
+            if name.is_empty() || name == "New Task" || !seen.insert(name.clone()) {
+                continue;
+            }
+
+            task_names.push(name);
+        }
+
+        Ok(task_names)
     }
 
     fn count_legacy_json_files(data_dir: &Path) -> Result<(u64, u64)> {
@@ -1304,6 +1349,47 @@ mod tests {
 
         let dates = storage.list_dates_with_records().unwrap();
         assert_eq!(dates, vec![date1, date3]);
+    }
+
+    #[test]
+    fn test_recent_task_names_are_recent_unique_and_exclude_new_task() {
+        let temp_dir = TempDir::new().unwrap();
+        let storage = Storage::new_with_dir(temp_dir.path().to_path_buf()).unwrap();
+        let today = create_test_date();
+        let yesterday = today.previous_day().unwrap();
+        let three_days_ago = yesterday.previous_day().unwrap().previous_day().unwrap();
+        let four_days_ago = three_days_ago.previous_day().unwrap();
+
+        let mut today_data = DayData::new(today);
+        today_data.add_record(create_test_record(1, "Today Task"));
+        today_data.add_record(create_test_record(2, "Repeat Task"));
+        today_data.add_record(create_test_record(3, "New Task"));
+        storage.save(&today_data).unwrap();
+
+        let mut yesterday_data = DayData::new(yesterday);
+        yesterday_data.add_record(create_test_record(1, "Yesterday Task"));
+        yesterday_data.add_record(create_test_record(2, "Repeat Task"));
+        storage.save(&yesterday_data).unwrap();
+
+        let mut three_days_ago_data = DayData::new(three_days_ago);
+        three_days_ago_data.add_record(create_test_record(1, "Three Days Ago Task"));
+        storage.save(&three_days_ago_data).unwrap();
+
+        let mut four_days_ago_data = DayData::new(four_days_ago);
+        four_days_ago_data.add_record(create_test_record(1, "Too Old Task"));
+        storage.save(&four_days_ago_data).unwrap();
+
+        let task_names = storage.recent_task_names(today, 3).unwrap();
+
+        assert_eq!(
+            task_names,
+            vec![
+                "Repeat Task",
+                "Today Task",
+                "Yesterday Task",
+                "Three Days Ago Task"
+            ]
+        );
     }
 
     #[test]
