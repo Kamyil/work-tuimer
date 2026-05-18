@@ -664,7 +664,7 @@ impl AppState {
             })
             .collect();
 
-        results.sort_by(|a, b| b.1.cmp(&a.1));
+        results.sort_by_key(|(_, score, _)| std::cmp::Reverse(*score));
         results
     }
 
